@@ -1,40 +1,54 @@
 # IPTVViewer
 
-Reproductor IPTV para Windows con interfaz gráfica (PyQt6), soporte de múltiples motores de reproducción (mpv y VLC), gestión de fuentes M3U/EPG y proxy Tor integrado.
+Reproductor IPTV de escritorio para Windows: reproduce listas M3U con guía EPG, motores de reproducción intercambiables (mpv/VLC) y proxy Tor integrado. Se distribuye como un único `.exe` autocontenido, sin instalación.
+
+## Empezar (sin compilar nada)
+
+1. Descarga `IPTVViewer.exe` desde la [última release](https://github.com/killo3967/IPTVViewer/releases/latest).
+2. Colócalo en una carpeta con permisos de escritura (evita `C:\Program Files`).
+3. Ejecútalo. En el primer arranque se crean `config.ini` y `logs/` junto al ejecutable.
+
+> **Windows SmartScreen**: el ejecutable no está firmado digitalmente, por lo que Windows mostrará un aviso. Pulsa **"Más información" → "Ejecutar de todos modos"**.
 
 ## Características
 
-- Interfaz gráfica con **PyQt6**.
-- Motores de reproducción: **mpv** (autocontenido) y **VLC** (requiere instalación).
-- Fuentes M3U por nombre con filtros y EPG independientes.
-- EPG (XMLTV) con soporte de archivos comprimidos `.gz`.
-- Proxy Tor integrado (torpy) para navegación anónima, sin dependencias externas.
-
-## Estructura
-
-```
-IPTVViewer/
-├── main.py                 # Punto de entrada
-├── src/
-│   ├── application/        # Servicios de aplicación
-│   ├── domain/             # Entidades y puertos (arquitectura hexagonal)
-│   └── infrastructure/     # Adaptadores (UI, reproductores, repositorios)
-├── tests/                  # Tests (pytest)
-├── pruebas/                # Scripts de diagnóstico
-├── docs/                   # Documentación
-├── resources/              # Recursos (logo)
-├── openspec/               # Artefactos SDD/OpenSpec
-├── config.ini.example      # Plantilla de configuración
-└── requirements.txt
-```
+| Área | Detalle |
+|------|---------|
+| Reproducción | Motores **mpv** (incluido en el `.exe`) y **VLC** (requiere instalación) |
+| Listas | Fuentes M3U por nombre, con filtro y EPG independientes por fuente |
+| EPG | XMLTV, con soporte de archivos comprimidos `.gz` |
+| Anonimato | Proxy Tor integrado (torpy), sin dependencias externas |
+| Interfaz | PyQt6 |
 
 ## Requisitos
 
-- Windows 10/11 de 64 bits.
-- Python 3.11+.
-- VLC Media Player 64-bit (solo si se usa el motor VLC).
+| Motor | Requisito |
+|-------|-----------|
+| **mpv** (predeterminado) | Ninguno: va dentro del `.exe` |
+| **VLC** | VLC Media Player 64-bit instalado |
 
-## Instalación y ejecución
+## Uso
+
+1. Arranca la aplicación.
+2. Añade o edita fuentes M3U desde la interfaz (o edita `config.ini`).
+3. Selecciona el motor de reproducción (mpv o VLC).
+4. Opcional: activa el proxy Tor desde la configuración.
+
+> La plantilla incluye una fuente de ejemplo local (`TU_SERVIDOR`). Sustitúyela por tu propia lista M3U.
+
+## Configuración
+
+Copia `config.ini.example` a `config.ini` (la aplicación lo crea sola en el primer arranque). Secciones:
+
+| Sección | Contenido |
+|---------|-----------|
+| `[SETTINGS]` | Fuente activa, motor de reproducción, aceleración por hardware |
+| `[source.N]` | Una entrada por fuente: nombre, URL M3U, filtro y EPG |
+| `[VLC]` | Parámetros del motor VLC (buffer, jitter, sincronización) |
+| `[MPV]` | Parámetros del motor mpv (caché, user-agent, demuxer) |
+| `[PROXY]` | Proxy Tor (servidor, puerto, reglas de bypass) |
+
+## Desarrollo (desde fuente)
 
 ```powershell
 python -m venv .venv
@@ -58,7 +72,7 @@ Esto produce `dist\IPTVViewer.exe` (modo *onefile*, autocontenido).
 
 Las DLLs del motor mpv **no están incluidas en este repositorio** (`bin/mpv-1.dll` y `bin/libmpv-2.dll`): son binarios externos de ~112 MB cada uno que superan el límite de GitHub. El `.exe` ya compilado las lleva dentro, pero para **recompilar** desde este código necesitas obtenerlas:
 
-1. Descarga libmpv para Windows desde la web oficial de mpv (<https://mpv.io/installation/>) o desde un build comunitario de libmpv que incluya `libmpv-2.dll`.
+1. Descarga libmpv para Windows desde la web oficial de mpv (<https://mpv.io/installation/>) o desde un build comunitario que incluya `libmpv-2.dll`.
 2. Coloca las DLLs en la carpeta `bin/` del proyecto:
 
    ```
@@ -70,6 +84,30 @@ Las DLLs del motor mpv **no están incluidas en este repositorio** (`bin/mpv-1.d
 
 Sin estas DLLs, el motor **mpv** no arrancará (el motor **VLC** sí funcionará si VLC está instalado). El código **no** las descarga automáticamente.
 
-## Configuración
+## Estructura
 
-Copia `config.ini.example` a `config.ini` y edítalo, o configura las fuentes desde la interfaz. El archivo `config.ini` no se versiona (contiene configuración local).
+```
+IPTVViewer/
+├── main.py                 # Punto de entrada
+├── src/
+│   ├── application/        # Servicios de aplicación
+│   ├── domain/             # Entidades y puertos (arquitectura hexagonal)
+│   └── infrastructure/     # Adaptadores (UI, reproductores, repositorios)
+├── tests/                  # Tests (pytest)
+├── pruebas/                # Scripts de diagnóstico
+├── docs/                   # Documentación
+├── resources/              # Recursos (logo)
+├── openspec/               # Artefactos SDD/OpenSpec
+├── config.ini.example      # Plantilla de configuración
+└── requirements.txt
+```
+
+## Solución de problemas
+
+| Síntoma | Causa probable |
+|---------|----------------|
+| Un canal no carga | URL M3U inválida o filtro/EPG mal configurado |
+| El motor mpv no arranca (solo al compilar) | Faltan las DLLs en `bin/` |
+| El motor VLC no funciona | VLC Media Player no está instalado |
+
+Los registros en `logs/iptv_viewer.log` ayudan a diagnosticar errores.
