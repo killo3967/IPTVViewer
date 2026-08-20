@@ -57,7 +57,7 @@ python main.py
 | Archivo | Propósito |
 |---|---|
 | `config.ini` | Fuente M3U, EPG, motor activo, proxy, opciones técnicas |
-| `requirements.txt` | Dependencias Python (39 paquetes) |
+| `requirements.txt` | Dependencias directas (7 paquetes) |
 | `skills-lock.json` | Versiones bloqueadas de skills del agente |
 
 ---
@@ -73,3 +73,24 @@ python main.py
 | `logs/` | Salida de logs (iptv_viewer.log, vlc.log, mpv.log) |
 | `docs/` | Documentación canónica y auditoría |
 | `docs/diataxis/` | Documentación derivada (este conjunto) |
+| `build.bat` / `release.bat` | Scripts de empaquetado y publicación |
+| `IPTVViewer.spec` | Configuración de PyInstaller |
+
+---
+
+## Empaquetado (PyInstaller)
+
+Para generar el ejecutable standalone:
+
+```powershell
+# Genera un único .exe (onefile, sin consola) en dist\IPTVViewer.exe
+.\build.bat
+
+# Publica el .exe en una release de GitHub (requiere gh autenticado)
+.\release.bat v1.1
+```
+
+- `IPTVViewer.spec` define el build: **onefile**, `console=False`, `upx=True`, incluye `bin/` y `resources/` como datos.
+- El `.exe` resultante (~183 MB) es autónomo; no requiere Python instalado. VLC sigue siendo externo para el motor VLC.
+- `bin/libmpv-2.dll` se empaqueta junto al ejecutable para el motor MPV.
+- En modo congelado, `config.ini` y `logs/` se crean junto al `.exe` (`SCRIPT_DIR = Path(sys.executable).parent`).

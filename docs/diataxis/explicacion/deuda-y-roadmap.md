@@ -1,6 +1,6 @@
 # Deuda Técnica y Hoja de Ruta
 
-> **Respuesta corta**: El proyecto está funcional pero tiene deuda técnica conocida (tests, backoff, caché de logos). Las fases 1 y 2 del roadmap original necesitan reevaluación.
+> **Respuesta corta**: El proyecto está funcional, con tests en verde y empaquetado `.exe` standalone. Queda deuda técnica conocida (backoff, caché de logos, i18n).
 
 ---
 
@@ -12,8 +12,8 @@
 | DT-02 | Reconexión sin backoff exponencial (200ms/1s fijos) | Puede saturar el servidor en fallos persistentes | Backoff: 200ms → 1s → 5s tras 3 fallos |
 | DT-03 | Sin i18n (solo castellano) | Barrera para usuarios no hispanohablantes | Preparar `.ts` con `tr()` de PyQt6 |
 | DT-04 | Bootstrap de Tor lento (~60s) | Mala UX en primer uso | Barra de progreso o indicador visual |
-| DT-05 | 0 tests unitarios en `src/` | Sin red de seguridad para refactors | Añadir pytest + pytest-qt al directorio `tests/` |
-| DT-06 | `except:` genérico en 9 ubicaciones | Oculta errores inesperados | Capturar excepciones específicas |
+| DT-05 | ✅ Resuelto (2026-08): 36 tests en verde en `tests/` | — | — |
+| DT-06 | `except Exception` amplio en 16 ubicaciones (los `except:` desnudos ya se eliminaron) | Oculta errores inesperados | Capturar excepciones específicas |
 | DT-07 | Sin type hints estrictos (mypy) | Errores de tipo en runtime | Configurar mypy en modo strict |
 | DT-08 | `src/application/dtos/` y `src/infrastructure/config/` vacíos | Confusión estructural | Poblar o eliminar |
 
@@ -31,6 +31,8 @@
 | Proxy Tor interno (torpy) | Funcional, con monitoreo y renovación de identidad |
 | Carga de M3U remoto/local | Funcional |
 | EPG con XMLTV | Funcional, con matching por nombre normalizado |
+| Tests unitarios | 8 archivos, 36 tests en verde (pytest) |
+| Empaquetado PyInstaller | `.exe` standalone onefile (183 MB) vía `build.bat`/`release.bat` |
 
 ---
 
@@ -39,9 +41,8 @@
 ### Corto plazo (correcciones)
 
 - [ ] Añadir backoff exponencial a la reconexión (DT-02)
-- [ ] Reemplazar `except:` genéricos por excepciones específicas (DT-06)
+- [ ] Acotar `except Exception` a excepciones específicas (DT-06)
 - [ ] Poblar o eliminar directorios vacíos `dtos/` y `config/` (DT-08)
-- [ ] Escribir tests unitarios para servicios de aplicación (DT-05)
 
 ### Medio plazo (mejoras)
 
@@ -55,6 +56,5 @@
 ### Largo plazo (evolución)
 
 - [ ] Internacionalización i18n (DT-03)
-- [ ] Empaquetado con PyInstaller/Nuitka
 - [ ] CI/CD con GitHub Actions
 - [ ] Soporte para subtítulos

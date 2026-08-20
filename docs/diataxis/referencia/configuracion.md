@@ -34,9 +34,9 @@ player_engine = mpv
 
 [source.0]
 name = TV España
-m3u = http://TU_SERVIDOR:34400/m3u/xteve.m3u
+m3u = http://192.168.1.46:34400/m3u/xteve.m3u
 filter = SPAIN
-epg = http://TU_SERVIDOR:34400/xmltv/xteve.xml
+epg = http://192.168.1.46:34400/xmltv/xteve.xml
 
 [source.1]
 name = IPTV Premium
@@ -84,12 +84,12 @@ epg = http://otro-proveedor.com/epg.xml
 
 | Clave | Tipo | Por defecto | Descripción |
 |---|---|---|---|
-| `enabled` | bool | `True` | Activar proxy al iniciar |
+| `enabled` | bool | `False` | Activar proxy al iniciar |
 | `type` | `tor` \| `http` \| `socks5` | `tor` | Tipo de proxy |
 | `server` | string | `127.0.0.1` | Dirección del servidor proxy |
 | `port` | int | `9050` | Puerto del proxy |
 | `username` | string | (vacío) | Usuario (para HTTP/SOCKS5) |
 | `password` | string | (vacío) | Contraseña (para HTTP/SOCKS5) |
 | `bypass_local` | bool | `True` | No enrutar direcciones locales por proxy |
-| `tor_control_port` | int | `9051` | Puerto de control de Tor |
-| `tor_control_password` | string | (vacío) | Contraseña del puerto de control |
+| `bypass_local_subnet` | bool | `False` | Excluir también la subred local del proxy |
+| `custom_bypass` | string | (vacío) | Hosts/dominios adicionales a excluir, separados por coma |

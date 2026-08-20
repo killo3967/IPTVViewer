@@ -1,42 +1,22 @@
 # Dependencias
 
-> **Respuesta corta**: 39 paquetes listados en `requirements.txt`. Los esenciales son PyQt6, python-vlc, mpv, torpy, y requests. El resto son transitivas o de desarrollo.
+> **Respuesta corta**: 7 dependencias directas en `requirements.txt`. Los esenciales son PyQt6, python-vlc, mpv, torpy y requests. El resto son de desarrollo (pytest).
 
 ---
 
-## Dependencias directas (esenciales)
+## Dependencias directas (`requirements.txt`)
 
-| Paquete | Versión | Rol |
+> `requirements.txt` se reescribió en 2026-07-04 para listar solo dependencias directas, sin transitivas.
+
+| Paquete | Requisito | Rol |
 |---|---|---|
-| `PyQt6` | 6.8.1 | Framework de interfaz gráfica |
-| `PyQt6-Qt6` | 6.8.2 | Binarios Qt6 para PyQt6 |
-| `PyQt6_sip` | 13.10.0 | Binding SIP para PyQt6 |
-| `python-vlc` | 3.0.21203 | Binding del motor VLC |
-| `mpv` | (via libmpv.dll) | Binding del motor MPV |
-| `torpy` | 1.1.6 | Cliente Tor en Python puro |
-| `requests` | 2.32.3 | Peticiones HTTP (M3U remoto, EPG) |
-| `cryptography` | ≥3.0.0 | Criptografía para Tor |
-
-## Dependencias de desarrollo
-
-| Paquete | Versión | Rol |
-|---|---|---|
-| `pytest` | 9.0.2 | Framework de testing |
-| `pytest-qt` | 4.5.0 | Testing de widgets Qt |
-
-## Dependencias transitivas y utilidades
-
-| Paquete | Rol |
-|---|---|
-| `certifi`, `urllib3`, `charset-normalizer`, `idna` | Stack HTTP de requests |
-| `boolean.py`, `pyparsing` | Parseo de expresiones |
-| `defusedxml` | Parseo seguro de XML (EPG) |
-| `filelock`, `platformdirs` | Utilidades de sistema |
-| `rich`, `Pygments`, `markdown-it-py`, `mdurl` | Formateo de terminal |
-| `pip-audit`, `pip-requirements-parser`, `pip-api`, `cyclonedx-python-lib`, `packageurl-python`, `py-serializable`, `sortedcontainers`, `tomli`, `tomli_w` | Herramientas de auditoría de dependencias |
-| `CacheControl`, `msgpack` | Caché HTTP |
-| `iniconfig`, `pluggy` | Dependencias de pytest |
-| `packaging`, `typing_extensions`, `colorama` | Compatibilidad |
+| `PyQt6` | `>=6.5` | Framework de interfaz gráfica |
+| `python-vlc` | `>=3.0` | Binding del motor VLC |
+| `mpv` | `>=1.0` | Binding del motor MPV |
+| `requests` | `>=2.28` | Peticiones HTTP (M3U remoto, EPG) |
+| `torpy` | `>=1.0` | Cliente Tor en Python puro |
+| `pytest` | `>=8.0` | Framework de testing |
+| `pytest-qt` | `>=4.2` | Testing de widgets Qt |
 
 ---
 
@@ -44,13 +24,23 @@
 
 | Componente | Ubicación | Obligatorio |
 |---|---|---|
-| `libmpv-2.dll` | `bin/` | ✅ Solo para motor MPV |
+| `libmpv-2.dll` (y `mpv-1.dll`) | `bin/` | ✅ Solo para motor MPV |
 | VLC (sistema) | Instalación estándar | ✅ Solo para motor VLC |
+
+---
+
+## Dependencias de empaquetado (PyInstaller)
+
+| Componente | Rol |
+|---|---|
+| `pyinstaller` | Genera el `.exe` standalone a partir de `IPTVViewer.spec` |
+| `gh` (GitHub CLI) | Publica el `.exe` en releases de GitHub vía `release.bat` |
+
+> `pyinstaller` no está en `requirements.txt`; se instala en el entorno de build antes de ejecutar `build.bat`.
 
 ---
 
 ## Notas
 
-- `mpv` (el binding Python) se importa dinámicamente dentro de `mpv_player_adapter.py`, no está en `requirements.txt`. Requiere `libmpv-2.dll` en `bin/`.
-- Los paquetes de auditoría (`pip-audit`, `cyclonedx-python-lib`, etc.) son solo para CI/desarrollo, no necesarios en runtime.
-- `pip-requirements-parser` v32.0.1 es el encargado de leer `requirements.txt`.
+- El binding `mpv` se importa dinámicamente dentro de `mpv_player_adapter.py`; requiere `libmpv-2.dll` en `bin/`.
+- En el `.exe` empaquetado, `bin/` y `resources/` se incluyen como datos de PyInstaller (ver `IPTVViewer.spec`).
