@@ -1,0 +1,90 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+!IPTVViewer.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nosepy
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+pyre.xml
+
+# Environments
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Local config (use config.ini.example as template)
+config.ini
+config.ini.bak
+
+# Runtime-generated data
+logs/
+*.log
+cache/
+backup/
+
+# Media / streaming binaries and lists (do NOT version)
+bin/
+mpv_temp/
+m3u/*.m3u
+m3u/*.m3u8
+m3u/*.xmltv
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+
+# Local agent / tooling state (do NOT publish)
+.pi/
+.pi-subagents/
+.agent/
+.atl/
+
+# OS
+.DS_Store
+Thumbs.db

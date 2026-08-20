@@ -1,0 +1,50 @@
+[SETTINGS]
+active = 0
+hw_acceleration = True
+player_engine = mpv
+
+[source.0]
+name = TV España
+m3u = http://TU_SERVIDOR:34400/m3u/xteve.m3u
+filter = SPAIN
+epg = http://TU_SERVIDOR:34400/xmltv/xteve.xml
+
+[source.1]
+name = Pluto TV
+m3u = 
+filter = 
+epg = 
+
+[VLC]
+reset_plugins_cache = False
+network_caching = 1500
+clock_jitter = 1000
+clock_synchro = 0
+drop_late_frames = True
+skip_frames = True
+repeat = True
+log_verbose = 2
+file_logging = True
+logfile = logs/vlc.log
+hw_acceleration = True
+
+[MPV]
+network_caching = 5000
+hw_acceleration = True
+cache = True
+demuxer_readahead_secs = 5.0
+user_agent = Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36
+log_level = info
+logfile = logs/mpv.log
+file_logging = True
+
+[PROXY]
+enabled = False
+type = tor
+server = 127.0.0.1
+port = 9050
+username = 
+password = 
+bypass_local = True
+bypass_local_subnet = False
+custom_bypass = 
