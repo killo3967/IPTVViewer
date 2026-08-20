@@ -19,6 +19,17 @@
 
 ---
 
+## Bugs reportados (2026-08)
+
+| ID | Problema | Severidad | Propuesta |
+|---|---|---|---|
+| BUG-01 | Proxy Tor falla con `Missing dependencies for socks` | Alta | Revisar dependencias de torpy/PySocks en el empaquetado |
+| BUG-02 | Cambiar la configuración de EPG no refresca la lista (hay que reiniciar) | Media | Añadir botón "Refrescar lista" |
+| BUG-03 | Tecla `F` no alterna pantalla completa | Alta | Toggle fullscreen que restaure el estado anterior |
+| BUG-04 | Recuadros de nombre de canal y parrilla son editables | Baja | Marcar como solo lectura |
+
+---
+
 ## Lo que ya funciona (Fase 1 ✅)
 
 | Funcionalidad | Estado |
@@ -58,3 +69,14 @@
 - [ ] Internacionalización i18n (DT-03)
 - [ ] CI/CD con GitHub Actions
 - [ ] Soporte para subtítulos
+
+---
+
+## Funcionalidades solicitadas
+
+- [ ] Búsqueda en parrilla: campo de texto + resaltado de resultados
+- [ ] Coloreado de parrilla por categoría (películas, series, noticias, deportes)
+- [ ] Crear lista importando datos de un m3u/m3u8
+- [ ] Exportación / backup de listas y configuración
+- [ ] Recordar último canal abierto y reabrir por él al iniciar
+- [ ] Modos de visualización: Verbose (ALT-1), Medio (ALT-2), Compacto (ALT-3), con nombres configurables
