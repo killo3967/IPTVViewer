@@ -170,6 +170,10 @@ class IPTVMainWindow(QMainWindow):
             " font-size: 18px; font-weight: bold;"
         )
         self._channel_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Native window propia para pintarse ENCIMA del video embebido (VLC/mpv
+        # dibujan directamente en el HWND del video_widget y tapan a los hijos Qt).
+        self._channel_overlay.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+        self._channel_overlay.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._channel_overlay.hide()
         
         # Inicializar el visor de video en el reproductor
