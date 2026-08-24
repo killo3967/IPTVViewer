@@ -1004,6 +1004,7 @@ def test_channel_overlay_shown_on_video_mode_and_zap(qtbot):
     QApplication.processEvents()
 
     qtbot.keyClick(window, Qt.Key.Key_3, Qt.KeyboardModifier.AltModifier)
+    _pump_events(0.05)
     assert window._channel_overlay.isVisible()
     assert window._channel_overlay.text() == "c1"
 

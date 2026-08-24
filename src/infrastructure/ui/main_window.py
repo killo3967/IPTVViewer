@@ -219,7 +219,7 @@ class IPTVMainWindow(QMainWindow):
         if self._save_callback:
             self._save_callback(self._config)
         if new is ViewMode.VIDEO:
-            self._show_channel_overlay()
+            QTimer.singleShot(0, self._show_channel_overlay)
 
     def _retarget_video(self):
         """Re-apunta la salida del reproductor al winId actual (REQ-7).
@@ -412,7 +412,7 @@ class IPTVMainWindow(QMainWindow):
         for w in self._fullscreen_watchers:
             w.installEventFilter(self)
         self._view_controller.activate(ViewMode.VIDEO)
-        self._show_channel_overlay()
+        QTimer.singleShot(0, self._show_channel_overlay)
 
     def _exit_fullscreen(self):
         """Única ruta de salida de pantalla completa (F-off, Esc, closeEvent).
