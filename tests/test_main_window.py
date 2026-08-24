@@ -10,7 +10,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PyQt6.QtCore import QObject, pyqtSignal, Qt  # noqa: E402
-from PyQt6.QtWidgets import QApplication  # noqa: E402
+from PyQt6.QtWidgets import QApplication, QWidget  # noqa: E402
 
 from src.application.services.view_mode_controller import ViewMode  # noqa: E402
 from src.application.services.view_mode_controller import resolve_zap_index  # noqa: E402
@@ -633,3 +633,148 @@ def test_ctrl_g_works_after_returning_to_normal(qtbot, monkeypatch):
 
     qtbot.keyClick(window, Qt.Key.Key_G, Qt.KeyboardModifier.ControlModifier)
     assert recorded == ["created", "exec"]
+
+def test_pip_window_has_detached_flags(qtbot):
+    from src.infrastructure.ui.components.pip_window import PIPWindow
+
+    target = QWidget()
+    pip = PIPWindow(target)
+    qtbot.addWidget(pip)
+
+    flags = pip.windowFlags()
+    assert flags & Qt.WindowType.Tool
+    assert flags & Qt.WindowType.FramelessWindowHint
+    assert flags & Qt.WindowType.WindowStaysOnTopHint
+
+
+def test_pip_set_video_widget_reparents(qtbot):
+    from src.infrastructure.ui.components.pip_window import PIPWindow
+
+    pip = PIPWindow(QWidget())
+    qtbot.addWidget(pip)
+    video = QWidget()
+
+    pip.set_video_widget(video)
+
+    assert video.parent() is pip
+
+
+def test_pip_body_drag_moves_window(qtbot):
+    from PyQt6.QtTest import QTest
+
+    from src.infrastructure.ui.components.pip_window import PIPWindow
+
+    pip = PIPWindow(QWidget())
+    qtbot.addWidget(pip)
+    pip.move(100, 100)
+    pip.show()
+    QApplication.processEvents()
+    start = pip.pos()
+
+    QTest.mousePress(pip, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, pip.rect().center())
+    QTest.mouseMove(pip, pip.rect().center() + __import__("PyQt6.QtCore", fromlist=["QPoint"]).QPoint(30, 20))
+    QTest.mouseRelease(pip, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, pip.rect().center() + __import__("PyQt6.QtCore", fromlist=["QPoint"]).QPoint(30, 20))
+
+    assert pip.pos() != start
+
+
+def test_pip_grip_drag_resizes_with_minimum(qtbot):
+    from PyQt6.QtCore import QPoint
+    from PyQt6.QtTest import QTest
+
+    from src.infrastructure.ui.components.pip_window import PIPWindow, ResizeGrip
+
+    pip = PIPWindow(QWidget())
+    qtbot.addWidget(pip)
+    pip.resize(200, 120)
+    pip.show()
+    QApplication.processEvents()
+    grip = pip.findChild(ResizeGrip)
+    assert grip is not None
+    before = (pip.width(), pip.height())
+
+    QTest.mousePress(grip, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, grip.rect().center())
+    QTest.mouseMove(grip, grip.rect().center() + QPoint(40, 30))
+    QTest.mouseRelease(grip, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, grip.rect().center() + QPoint(40, 30))
+
+    assert pip.width() >= 160 and pip.height() >= 90
+    assert (pip.width(), pip.height()) != before
+
+
+def test_pip_forwards_key_events_to_target(qtbot):
+    from src.infrastructure.ui.components.pip_window import PIPWindow
+
+    class Target(QWidget):
+        def __init__(self):
+            super().__init__()
+            self.received = []
+
+        def keyPressEvent(self, event):
+            self.received.append(event.key())
+
+    target = Target()
+    pip = PIPWindow(target)
+    qtbot.addWidget(pip)
+
+    qtbot.keyClick(pip, Qt.Key.Key_Down)
+
+    assert target.received == [Qt.Key.Key_Down]
+
+def test_p_opens_pip_and_hides_main_placeholder(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_P)
+
+    assert window._pip_open is True
+    pip = window._pip_window
+    assert pip is not None
+    assert pip.isVisible()
+    assert window.video_widget.parent() is pip
+    assert window.splitter.indexOf(window.video_widget) == -1
+
+
+def test_p_closes_pip_and_widget_returns_to_splitter(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_P)
+    qtbot.keyClick(window, Qt.Key.Key_P)
+
+    assert window._pip_open is False
+    assert not window._pip_window.isVisible()
+    assert window.splitter.indexOf(window.video_widget) == 1
+    assert window.video_widget.isVisible()
+
+
+def test_alt4_toggles_the_same_pip_instance(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_4, Qt.KeyboardModifier.AltModifier)
+    first = window._pip_window
+    assert first is not None and window._pip_open is True
+
+    qtbot.keyClick(window, Qt.Key.Key_4, Qt.KeyboardModifier.AltModifier)
+    assert window._pip_open is False
+
+    qtbot.keyClick(window, Qt.Key.Key_4, Qt.KeyboardModifier.AltModifier)
+    assert window._pip_open is True
+    assert window._pip_window is first
+
+
+def test_pip_never_auto_opens_at_launch(qtbot):
+    window, _ = make_window(config=make_config(pip_geometry="1280,40,480,270"))
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    assert window._pip_open is False
+    assert window._pip_window is None
+    assert window.splitter.indexOf(window.video_widget) == 1

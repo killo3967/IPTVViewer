@@ -3,7 +3,8 @@ from PyQt6.QtWidgets import (
     QMainWindow, QTableWidget, QTableWidgetItem, QMessageBox,
     QSplitter, QWidget, QVBoxLayout, QHeaderView,
     QMenuBar, QFileDialog, QInputDialog, QMenu,
-    QDialog, QFormLayout, QLineEdit, QDialogButtonBox
+    QDialog, QFormLayout, QLineEdit, QDialogButtonBox,
+    QApplication,
 )
 from PyQt6.QtGui import QColor, QPixmap, QAction, QActionGroup, QIcon, QKeySequence, QShortcut
 from PyQt6.QtCore import Qt, QTimer, QSize, QEvent
@@ -17,7 +18,10 @@ from src.application.services.view_mode_controller import (
     resolve_zap_index,
     encode_splitter_state,
     decode_splitter_state,
+    geometry_to_str,
+    str_to_geometry,
 )
+from src.infrastructure.ui.components.pip_window import PIPWindow
 from src.infrastructure.adapters.qt_logo_loader_adapter import QtLogoLoaderAdapter
 from src.infrastructure.ui.components.epg_grid import EPGGridDialog
 from src.domain.entities.channel import Channel
@@ -88,6 +92,8 @@ class IPTVMainWindow(QMainWindow):
         self._fullscreen_watchers = []
         self._splitter_snapshot = None
         self._splitter_save_timer = None
+        self._pip_window = None
+        self._pip_open = False
 
         # UI Initialization
         self.setWindowTitle("IPTV Viewer – Arquitectura Hexagonal")
@@ -258,6 +264,7 @@ class IPTVMainWindow(QMainWindow):
         QShortcut(QKeySequence("Alt+2"), self, activated=lambda: self._view_controller.activate(ViewMode.COMPACT))
         QShortcut(QKeySequence("Alt+3"), self, activated=lambda: self._view_controller.activate(ViewMode.VIDEO))
         QShortcut(QKeySequence("Alt+4"), self, activated=self._toggle_pip)
+        QShortcut(QKeySequence("P"), self, activated=self._toggle_pip)
         QShortcut(QKeySequence("Up"), self, activated=lambda: self._zap(-1))
         QShortcut(QKeySequence("Down"), self, activated=lambda: self._zap(+1))
         QShortcut(QKeySequence("F"), self, activated=self._toggle_fullscreen)
@@ -268,8 +275,47 @@ class IPTVMainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+G"), self, activated=self.view_epg_action.trigger)
 
     def _toggle_pip(self):
-        """Alterna la ventana PIP (REQ-6). Cuerpo completo en PR 4."""
-        raise NotImplementedError("PIP integration lands in PR 4")
+        """Alterna la ventana PIP: DETACH del video_widget (REQ-6).
+
+        Nunca se auto-abre al arrancar; solo se crea de forma perezosa en el
+        primer uso y se reutiliza (oculta) después.
+        """
+        if self._pip_open:
+            self._close_pip()
+        else:
+            self._open_pip()
+
+    def _open_pip(self):
+        if self._pip_window is None:
+            self._pip_window = PIPWindow(self)
+        pip = self._pip_window
+        pip.set_video_widget(self.video_widget)
+        self._apply_pip_geometry(pip)
+        pip.show()
+        self._pip_open = True
+        self._retarget_video()
+
+    def _close_pip(self):
+        pip = self._pip_window
+        pip.hide()
+        self.video_widget.setParent(self.splitter)
+        self.splitter.insertWidget(1, self.video_widget)
+        self._pip_open = False
+        self._apply_layout(self._view_controller.mode)
+        self._retarget_video()
+
+    def _apply_pip_geometry(self, pip):
+        """Aplica geometría persistida válida o la colocación por defecto."""
+        parsed = str_to_geometry(self._config.get('pip_geometry', ''))
+        if parsed is not None:
+            pip.setGeometry(*parsed)
+            return
+        screen = QApplication.primaryScreen()
+        avail = screen.availableGeometry() if screen is not None else None
+        if avail is not None:
+            pip.setGeometry(avail.right() - 480 - 20, avail.top() + 20, 480, 270)
+        else:
+            pip.resize(480, 270)
 
     def _zap(self, direction: int):
         """Cambia al canal anterior/siguiente con wrap-around (REQ-5).
@@ -729,5 +775,7 @@ class IPTVMainWindow(QMainWindow):
     def closeEvent(self, event):
         if self._fullscreen_active:
             self._exit_fullscreen()
+        if self._pip_open:
+            self._close_pip()
         self._playback_manager.stop_playback()
         super().closeEvent(event)
