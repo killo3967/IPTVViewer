@@ -5,12 +5,19 @@ from PyQt6.QtWidgets import (
     QMenuBar, QFileDialog, QInputDialog, QMenu,
     QDialog, QFormLayout, QLineEdit, QDialogButtonBox
 )
-from PyQt6.QtGui import QColor, QPixmap, QAction, QActionGroup, QIcon
-from PyQt6.QtCore import Qt, QTimer, QSize
+from PyQt6.QtGui import QColor, QPixmap, QAction, QActionGroup, QIcon, QKeySequence, QShortcut
+from PyQt6.QtCore import Qt, QTimer, QSize, QEvent
 
 from src.application.services.playlist_loader import PlaylistLoader
 from src.application.services.playback_manager import PlaybackManager
 from src.application.services.epg_manager import EPGManager
+from src.application.services.view_mode_controller import (
+    ViewMode,
+    ViewModeController,
+    resolve_zap_index,
+    encode_splitter_state,
+    decode_splitter_state,
+)
 from src.infrastructure.adapters.qt_logo_loader_adapter import QtLogoLoaderAdapter
 from src.infrastructure.ui.components.epg_grid import EPGGridDialog
 from src.domain.entities.channel import Channel
@@ -75,6 +82,13 @@ class IPTVMainWindow(QMainWindow):
         self._save_callback = save_callback
         self._last_playlist = Playlist() # Caché de la última lista cargada
 
+        # Estado de sesión (no persistido)
+        self._fullscreen_active = False
+        self._cursor_timer = None
+        self._fullscreen_watchers = []
+        self._splitter_snapshot = None
+        self._splitter_save_timer = None
+
         # UI Initialization
         self.setWindowTitle("IPTV Viewer – Arquitectura Hexagonal")
         self.resize(1200, 650)
@@ -91,7 +105,15 @@ class IPTVMainWindow(QMainWindow):
             
         self._setup_ui()
         self._create_menus()
-        
+
+        # Controlador de modos de vista: estado puro, layout aplicado por listener
+        self._view_controller = ViewModeController(
+            ViewMode.parse(config.get('view_mode', 'normal'))
+        )
+        self._view_controller.register_listener(self._on_view_mode_changed)
+        self._apply_layout(self._view_controller.mode)
+        self._register_shortcuts()
+
         # Timer para actualizar EPG cada minuto
         self._epg_timer = QTimer(self)
         self._epg_timer.timeout.connect(self._refresh_epg_display)
@@ -110,6 +132,8 @@ class IPTVMainWindow(QMainWindow):
         
         splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(splitter)
+        self.splitter = splitter
+        self.splitter.splitterMoved.connect(self._arm_splitter_save)
         
         # Tabla
         self.table = QTableWidget()
@@ -132,6 +156,184 @@ class IPTVMainWindow(QMainWindow):
         # Inicializar el visor de video en el reproductor
         self._playback_manager.initialize_display(int(self.video_widget.winId()))
 
+    def _apply_layout(self, mode: ViewMode):
+        """Aplica el mapeo de layout por modo (REQ-2, REQ-10).
+
+        Nunca deshabilita QActions (REQ-9): solo muestra/oculta la barra
+        de menús y cambia la política de menú contextual de tabla/video.
+        """
+        default_policy = Qt.ContextMenuPolicy.DefaultContextMenu
+        no_menu_policy = Qt.ContextMenuPolicy.NoContextMenu
+        if mode is ViewMode.NORMAL:
+            self.table.show()
+            self.table.setColumnHidden(0, False)
+            self.table.setColumnHidden(1, False)
+            self.table.setColumnHidden(2, False)
+            self.menuBar().show()
+            self.table.setContextMenuPolicy(default_policy)
+            self.video_widget.setContextMenuPolicy(default_policy)
+            self._restore_splitter_state()
+        elif mode is ViewMode.COMPACT:
+            self.table.show()
+            self.table.setColumnHidden(1, True)
+            self.table.setColumnHidden(2, True)
+            self.menuBar().hide()
+            self.table.setContextMenuPolicy(no_menu_policy)
+            self.video_widget.setContextMenuPolicy(no_menu_policy)
+        elif mode is ViewMode.VIDEO:
+            self.table.hide()
+            self.menuBar().hide()
+            self.table.setContextMenuPolicy(no_menu_policy)
+            self.video_widget.setContextMenuPolicy(no_menu_policy)
+
+    def _on_view_mode_changed(self, old: ViewMode, new: ViewMode):
+        """Listener del controlador: layout + persistencia (REQ-2, REQ-8).
+
+        El no-op ya está garantizado por el controlador (activate() no notifica
+        si el modo no cambia), así que aquí siempre hay un cambio real.
+        """
+        if new is ViewMode.VIDEO and old is not ViewMode.VIDEO:
+            self._snapshot_splitter_state()
+        self._apply_layout(new)
+        self._retarget_video()
+        self._config['view_mode'] = new.value
+        if self._save_callback:
+            self._save_callback(self._config)
+
+    def _retarget_video(self):
+        """Re-apunta la salida del reproductor al winId actual (REQ-7).
+
+        El winId se re-lee en cada llamada (nunca se cachea): puede cambiar
+        tras setParent/hide-show.
+        """
+        self._playback_manager.initialize_display(int(self.video_widget.winId()))
+
+    def _arm_splitter_save(self):
+        """Arma el guardado diferido del estado del splitter (REQ-8).
+
+        Se salta mientras la tabla está oculta (VIDEO) para que el estado
+        colapsado nunca pise el estado persistido bueno.
+        """
+        if self.table.isHidden():
+            return
+        if self._splitter_save_timer is None:
+            self._splitter_save_timer = QTimer(self)
+            self._splitter_save_timer.setSingleShot(True)
+            self._splitter_save_timer.timeout.connect(self._flush_splitter_state)
+        self._splitter_save_timer.start(300)
+
+    def _flush_splitter_state(self):
+        self._config['splitter_state'] = encode_splitter_state(
+            bytes(self.splitter.saveState())
+        )
+        if self._save_callback:
+            self._save_callback(self._config)
+
+    def _snapshot_splitter_state(self):
+        """Snapshot síncrono PRE-ocultación al entrar en VIDEO (REQ-8).
+
+        Se ejecuta antes de ocultar la tabla: este es el estado autoritativo
+        guardado antes de que el layout colapsado pueda sobreescribirlo.
+        """
+        self._splitter_snapshot = bytes(self.splitter.saveState())
+        self._config['splitter_state'] = encode_splitter_state(self._splitter_snapshot)
+        if self._save_callback:
+            self._save_callback(self._config)
+
+    def _restore_splitter_state(self):
+        """Restaura el splitter: snapshot de sesión primero, persistido después."""
+        state = self._splitter_snapshot
+        if state is None:
+            state = decode_splitter_state(self._config.get('splitter_state', ''))
+        if state is not None:
+            self.splitter.restoreState(state)
+
+    def _register_shortcuts(self):
+        """Registra los atajos de modos de vista (REQ-3).
+
+        Alt+1..3 cambian de modo; Alt+4 alterna la ventana PIP (REQ-6,
+        cuerpo implementado en la integración de PIP).
+        """
+        QShortcut(QKeySequence("Alt+1"), self, activated=lambda: self._view_controller.activate(ViewMode.NORMAL))
+        QShortcut(QKeySequence("Alt+2"), self, activated=lambda: self._view_controller.activate(ViewMode.COMPACT))
+        QShortcut(QKeySequence("Alt+3"), self, activated=lambda: self._view_controller.activate(ViewMode.VIDEO))
+        QShortcut(QKeySequence("Alt+4"), self, activated=self._toggle_pip)
+        QShortcut(QKeySequence("Up"), self, activated=lambda: self._zap(-1))
+        QShortcut(QKeySequence("Down"), self, activated=lambda: self._zap(+1))
+        QShortcut(QKeySequence("F"), self, activated=self._toggle_fullscreen)
+        QShortcut(QKeySequence("Esc"), self, activated=self._exit_fullscreen)
+        # Ctrl+G debe funcionar con la barra de menús oculta (REQ-9): el atajo
+        # del QAction muere al ocultar el menú, así que se registra a nivel
+        # de ventana y se dispara la misma acción (nunca deshabilitada).
+        QShortcut(QKeySequence("Ctrl+G"), self, activated=self.view_epg_action.trigger)
+
+    def _toggle_pip(self):
+        """Alterna la ventana PIP (REQ-6). Cuerpo completo en PR 4."""
+        raise NotImplementedError("PIP integration lands in PR 4")
+
+    def _zap(self, direction: int):
+        """Cambia al canal anterior/siguiente con wrap-around (REQ-5).
+
+        Funciona en cualquier modo: el atajo es de ventana (WindowShortcut)
+        y la resolución de índice es la función pura del servicio.
+        """
+        channels = self._last_playlist.channels
+        idx = resolve_zap_index(
+            channels, self._playback_manager.current_channel, direction
+        )
+        if idx is not None:
+            self._playback_manager.play_channel(channels[idx])
+
+    def _toggle_fullscreen(self):
+        """Alterna el eje de pantalla completa (REQ-4). Estado de sesión."""
+        if self._fullscreen_active:
+            self._exit_fullscreen()
+        else:
+            self._enter_fullscreen()
+
+    def _enter_fullscreen(self):
+        """Entra en pantalla completa y arma el timer de ocultar cursor."""
+        self._fullscreen_active = True
+        self.showFullScreen()
+        self._cursor_timer = QTimer(self)
+        self._cursor_timer.setSingleShot(True)
+        self._cursor_timer.timeout.connect(self._on_cursor_timeout)
+        self._cursor_timer.start(3000)
+        self._fullscreen_watchers = [
+            self, self.centralWidget(), self.splitter, self.table, self.video_widget,
+        ]
+        for w in self._fullscreen_watchers:
+            w.installEventFilter(self)
+
+    def _exit_fullscreen(self):
+        """Única ruta de salida de pantalla completa (F-off, Esc, closeEvent).
+
+        Cancela el timer, restaura el cursor visible y quita los filtros.
+        No-op si no estamos en pantalla completa.
+        """
+        if not self._fullscreen_active:
+            return
+        self._fullscreen_active = False
+        if self._cursor_timer is not None:
+            self._cursor_timer.stop()
+        self.unsetCursor()
+        for w in self._fullscreen_watchers:
+            w.removeEventFilter(self)
+        self._fullscreen_watchers = []
+        self.showNormal()
+
+    def _on_cursor_timeout(self):
+        """Oculta el cursor tras 3 s sin movimiento (REQ-4)."""
+        self.setCursor(Qt.CursorShape.BlankCursor)
+
+    def eventFilter(self, obj, event):
+        """Restaura el cursor y reinicia el timer ante cualquier MouseMove."""
+        if event.type() == QEvent.Type.MouseMove and self._fullscreen_active:
+            self.unsetCursor()
+            if self._cursor_timer is not None:
+                self._cursor_timer.start(3000)
+        return super().eventFilter(obj, event)
+
     def _create_menus(self):
         """Crea el sistema de menús."""
         menubar = self.menuBar()
@@ -140,8 +342,11 @@ class IPTVMainWindow(QMainWindow):
         file_menu = menubar.addMenu("&Archivo")
 
         view_epg_action = file_menu.addAction("Ver &Parrilla EPG...")
-        view_epg_action.setShortcut("Ctrl+G")
         view_epg_action.triggered.connect(self._show_epg_grid)
+        self.view_epg_action = view_epg_action
+        # Sin setShortcut aquí: Ctrl+G se registra a nivel de ventana en
+        # _register_shortcuts() (el atajo del QAction muere al ocultar el
+        # menú; REQ-9 exige que siga funcionando en COMPACT/VIDEO).
 
         exit_action = file_menu.addAction("&Salir")
         exit_action.triggered.connect(self.close)
@@ -396,14 +601,12 @@ class IPTVMainWindow(QMainWindow):
             # ¿Ha cambiado el motor?
             if new_engine != current_engine:
                 logging.info(f"Cambiando motor de {current_engine} a {new_engine}")
-                from src.infrastructure.utils.proxy import get_standardized_proxy_config
-                std_proxy = get_standardized_proxy_config(proxy_cfg)
-                
-                if new_engine == 'mpv':
-                    new_adapter = MpvPlayerAdapter(new_mpv_cfg, std_proxy)
-                else:
-                    new_adapter = VlcPlayerAdapter(new_vlc_cfg, std_proxy)
-                
+                from src.infrastructure.adapters.player_factory import build_player_adapter
+
+                new_adapter = build_player_adapter(
+                    new_engine, new_vlc_cfg, new_mpv_cfg, proxy_cfg,
+                    VlcPlayerAdapter, MpvPlayerAdapter,
+                )
                 self._playback_manager.switch_player_engine(new_adapter, int(self.video_widget.winId()))
             else:
                 # Solo actualizar opciones del motor actual
@@ -430,6 +633,22 @@ class IPTVMainWindow(QMainWindow):
             
             # Aplicar inmediatamente a nivel global
             setup_proxy(new_proxy_cfg)
+
+            # Reiniciar el reproductor para aplicar el nuevo proxy (antes no se aplicaba en runtime)
+            from src.infrastructure.adapters.player_factory import build_player_adapter
+            from src.infrastructure.adapters.vlc_player_adapter import VlcPlayerAdapter
+            from src.infrastructure.adapters.mpv_player_adapter import MpvPlayerAdapter
+
+            engine = self._config.get('player_engine', 'vlc')
+            new_adapter = build_player_adapter(
+                engine,
+                self._config.get('vlc_config'),
+                self._config.get('mpv_config'),
+                new_proxy_cfg,
+                VlcPlayerAdapter,
+                MpvPlayerAdapter,
+            )
+            self._playback_manager.switch_player_engine(new_adapter, int(self.video_widget.winId()))
             
             # Persistir
             if self._save_callback:
@@ -508,5 +727,7 @@ class IPTVMainWindow(QMainWindow):
                     item.setIcon(icon)
 
     def closeEvent(self, event):
+        if self._fullscreen_active:
+            self._exit_fullscreen()
         self._playback_manager.stop_playback()
         super().closeEvent(event)

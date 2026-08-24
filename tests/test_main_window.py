@@ -1,0 +1,635 @@
+"""Pruebas de ventana principal (pytest-qt) para el cambio view-modes.
+
+Fakes a nivel de módulo (estilo ``FakePlayer``) que inyectan en
+``IPTVMainWindow``: loader de listas fijo, playback manager que registra
+llamadas, EPG manager sin datos, logo loader con la señal ``logo_loaded`` y
+un stub-recorder para ``EPGGridDialog``.
+"""
+import os
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PyQt6.QtCore import QObject, pyqtSignal, Qt  # noqa: E402
+from PyQt6.QtWidgets import QApplication  # noqa: E402
+
+from src.application.services.view_mode_controller import ViewMode  # noqa: E402
+from src.application.services.view_mode_controller import resolve_zap_index  # noqa: E402
+from src.application.services.view_mode_controller import encode_splitter_state  # noqa: E402
+from src.domain.entities.channel import Channel  # noqa: E402
+from src.domain.entities.playlist import Playlist  # noqa: E402
+from src.infrastructure.ui.main_window import IPTVMainWindow  # noqa: E402
+
+
+class FakePlaylistLoader:
+    """Devuelve siempre la misma playlist fija."""
+
+    def __init__(self, playlist: Playlist = None):
+        self._playlist = playlist or Playlist()
+
+    def load_and_filter(self, source: str, group_filter: str = "") -> Playlist:
+        return self._playlist
+
+
+class FakePlaybackManager:
+    """Registra play_channel/initialize_display y expone current_channel."""
+
+    def __init__(self):
+        self.play_calls = []
+        self.initialize_calls = []
+        self.stop_calls = []
+        self.current_channel = None
+
+    def play_channel(self, channel):
+        self.play_calls.append(channel)
+        self.current_channel = channel
+
+    def initialize_display(self, window_id):
+        self.initialize_calls.append(window_id)
+
+    def stop_playback(self):
+        self.stop_calls.append("stop")
+
+    def set_hw_accel(self, enabled):
+        pass
+
+    def switch_player_engine(self, adapter, window_id):
+        pass
+
+    def update_engine_options(self, options):
+        pass
+
+
+class FakeEPGManager:
+    """Sin datos de programación."""
+
+    def __init__(self):
+        self.has_data = False
+
+    def get_currently_airing(self, tvg_id: str, channel_name: str = ""):
+        return None
+
+    def update_epg(self, source):
+        pass
+
+
+class FakeLogoLoader(QObject):
+    """Expone la señal logo_loaded que el window conecta."""
+
+    logo_loaded = pyqtSignal(str, object)
+
+    def get_logo(self, url: str):
+        pass
+
+
+def make_channels():
+    return [
+        Channel(name="c1", url="http://test/c1", group="SPAIN"),
+        Channel(name="c2", url="http://test/c2", group="SPAIN"),
+        Channel(name="c3", url="http://test/c3", group="SPAIN"),
+    ]
+
+
+def make_config(**overrides) -> dict:
+    config = {
+        "sources": {0: {"name": "Lista 1", "m3u": "http://x/m3u", "filter": "SPAIN", "epg": ""}},
+        "active": 0,
+        "hw_acceleration": False,
+        "player_engine": "vlc",
+        "vlc_config": {},
+        "mpv_config": {},
+        "proxy_config": {},
+        "view_mode": "normal",
+        "splitter_state": "",
+        "pip_geometry": "",
+    }
+    config.update(overrides)
+    return config
+
+
+def _recorder():
+    """Espía de llamadas sin argumentos con contador."""
+    class Recorder:
+        calls = 0
+
+        def __call__(self):
+            Recorder.calls += 1
+
+    return Recorder()
+
+
+def make_window(config: dict = None, channels=None, save_callback=None, playback_manager=None):
+    """Construye IPTVMainWindow inyectando fakes."""
+    if config is None:
+        config = make_config()
+    playlist = Playlist(channels if channels is not None else make_channels())
+    playlist_loader = FakePlaylistLoader(playlist)
+    epg_manager = FakeEPGManager()
+    logo_loader = FakeLogoLoader()
+    if playback_manager is None:
+        playback_manager = FakePlaybackManager()
+    window = IPTVMainWindow(
+        playlist_loader,
+        playback_manager,
+        epg_manager,
+        logo_loader,
+        config,
+        save_callback,
+    )
+    return window, playback_manager
+
+
+def test_window_constructs_with_three_columns(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+
+    assert window.table.columnCount() == 3
+
+
+def test_startup_default_is_normal_layout(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    assert window.table.isVisible()
+    assert not window.table.isColumnHidden(0)
+    assert not window.table.isColumnHidden(1)
+    assert not window.table.isColumnHidden(2)
+    assert window.video_widget.isVisible()
+    assert window.menuBar().isVisible()
+    assert window.table.contextMenuPolicy() == Qt.ContextMenuPolicy.DefaultContextMenu
+    assert window.video_widget.contextMenuPolicy() == Qt.ContextMenuPolicy.DefaultContextMenu
+
+
+def test_compact_layout_hides_columns_and_menubar(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    window._apply_layout(ViewMode.COMPACT)
+
+    assert window.table.isVisible()
+    assert not window.table.isColumnHidden(0)
+    assert window.table.isColumnHidden(1)
+    assert window.table.isColumnHidden(2)
+    assert not window.menuBar().isVisible()
+    assert window.table.contextMenuPolicy() == Qt.ContextMenuPolicy.NoContextMenu
+    assert window.video_widget.contextMenuPolicy() == Qt.ContextMenuPolicy.NoContextMenu
+
+
+def test_video_layout_hides_table_and_menubar(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    window._apply_layout(ViewMode.VIDEO)
+
+    assert window.table.isHidden()
+    assert not window.menuBar().isVisible()
+    assert window.table.contextMenuPolicy() == Qt.ContextMenuPolicy.NoContextMenu
+    assert window.video_widget.contextMenuPolicy() == Qt.ContextMenuPolicy.NoContextMenu
+
+
+def test_return_to_normal_restores_columns_and_menubar(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    window._apply_layout(ViewMode.VIDEO)
+    window._apply_layout(ViewMode.NORMAL)
+
+    assert not window.table.isHidden()
+    assert not window.table.isColumnHidden(0)
+    assert not window.table.isColumnHidden(1)
+    assert not window.table.isColumnHidden(2)
+    assert window.menuBar().isVisible()
+    assert window.table.contextMenuPolicy() == Qt.ContextMenuPolicy.DefaultContextMenu
+    assert window.video_widget.contextMenuPolicy() == Qt.ContextMenuPolicy.DefaultContextMenu
+
+
+def test_startup_applies_persisted_compact_mode(qtbot):
+    window, _ = make_window(config=make_config(view_mode="compact"))
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    assert window.table.isVisible()
+    assert not window.table.isColumnHidden(0)
+    assert window.table.isColumnHidden(1)
+    assert window.table.isColumnHidden(2)
+    assert not window.menuBar().isVisible()
+    assert window.table.contextMenuPolicy() == Qt.ContextMenuPolicy.NoContextMenu
+
+
+def test_alt2_switches_to_compact_and_persists(qtbot):
+    saved = []
+    window, _ = make_window(save_callback=lambda cfg: saved.append(dict(cfg)))
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_2, Qt.KeyboardModifier.AltModifier)
+
+    assert window._view_controller.mode is ViewMode.COMPACT
+    assert window._config["view_mode"] == "compact"
+    assert saved and saved[-1]["view_mode"] == "compact"
+
+
+def test_alt3_switches_to_video(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_3, Qt.KeyboardModifier.AltModifier)
+
+    assert window._view_controller.mode is ViewMode.VIDEO
+
+
+def test_alt1_returns_to_normal(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+
+    qtbot.keyClick(window, Qt.Key.Key_3, Qt.KeyboardModifier.AltModifier)
+    qtbot.keyClick(window, Qt.Key.Key_1, Qt.KeyboardModifier.AltModifier)
+
+    assert window._view_controller.mode is ViewMode.NORMAL
+
+
+def test_repressing_active_mode_shortcut_is_noop(qtbot):
+    notifications = []
+    saved = []
+    window, _ = make_window(save_callback=lambda cfg: saved.append(cfg))
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+    window._view_controller.register_listener(
+        lambda old, new: notifications.append((old, new))
+    )
+
+    qtbot.keyClick(window, Qt.Key.Key_2, Qt.KeyboardModifier.AltModifier)
+    assert window._view_controller.mode is ViewMode.COMPACT
+    assert notifications == [(ViewMode.NORMAL, ViewMode.COMPACT)]
+    assert len(saved) == 1  # una sola persistencia por el cambio real
+
+    qtbot.keyClick(window, Qt.Key.Key_2, Qt.KeyboardModifier.AltModifier)
+
+    assert window._view_controller.mode is ViewMode.COMPACT
+    assert notifications == [(ViewMode.NORMAL, ViewMode.COMPACT)]
+    assert len(saved) == 1  # el no-op no persiste nada
+
+
+def test_mode_switch_retargets_video_exactly_once(qtbot):
+    window, playback = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+    before = len(playback.initialize_calls)  # 1 llamada inicial en _setup_ui
+
+    qtbot.keyClick(window, Qt.Key.Key_2, Qt.KeyboardModifier.AltModifier)
+
+    assert len(playback.initialize_calls) == before + 1
+    assert playback.initialize_calls[-1] == int(window.video_widget.winId())
+
+def test_f_toggles_fullscreen_on(qtbot, monkeypatch):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+    window.showFullScreen = _recorder()
+    window.showNormal = _recorder()
+
+    qtbot.keyClick(window, Qt.Key.Key_F)
+
+    assert window._fullscreen_active is True
+    assert window.showFullScreen.calls == 1
+
+
+def test_f_toggles_fullscreen_off(qtbot, monkeypatch):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+    window.showFullScreen = _recorder()
+    window.showNormal = _recorder()
+
+    qtbot.keyClick(window, Qt.Key.Key_F)
+    qtbot.keyClick(window, Qt.Key.Key_F)
+
+    assert window._fullscreen_active is False
+    assert window.showNormal.calls == 1
+
+
+def test_escape_exits_fullscreen_only_when_fullscreen(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+    window.showFullScreen = _recorder()
+    window.showNormal = _recorder()
+
+    qtbot.keyClick(window, Qt.Key.Key_Escape)
+    assert window._fullscreen_active is False
+    assert window.showNormal.calls == 0
+
+    qtbot.keyClick(window, Qt.Key.Key_F)
+    assert window._fullscreen_active is True
+    qtbot.keyClick(window, Qt.Key.Key_Escape)
+    assert window._fullscreen_active is False
+    assert window.showNormal.calls == 1
+
+
+def test_cursor_timeout_hides_cursor(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    qtbot.wait(10)
+
+    window._on_cursor_timeout()
+
+    assert window.cursor().shape() == Qt.CursorShape.BlankCursor
+
+
+def test_mouse_move_restores_cursor_and_restarts_timer(qtbot):
+    # offscreen no entrega eventos de ratón sintéticos de forma fiable:
+    # se invoca el eventFilter directamente (estrategia headless-safe del diseño)
+    from PyQt6.QtCore import QEvent, QPointF, QPoint
+    from PyQt6.QtGui import QMouseEvent
+
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window._enter_fullscreen()
+    window._on_cursor_timeout()
+    assert window.cursor().shape() == Qt.CursorShape.BlankCursor
+
+    gpos = window.mapToGlobal(QPoint(5, 5))
+    ev = QMouseEvent(
+        QEvent.Type.MouseMove,
+        QPointF(5, 5),
+        QPointF(gpos),
+        Qt.MouseButton.NoButton,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+
+    window.eventFilter(window, ev)
+
+    assert window.cursor().shape() == Qt.CursorShape.ArrowCursor
+    assert window._cursor_timer.isActive()
+
+
+def test_exiting_fullscreen_stops_timer_and_restores_cursor(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window._enter_fullscreen()
+    window._on_cursor_timeout()
+    assert window._cursor_timer.isActive()
+
+    window._exit_fullscreen()
+
+    assert window._fullscreen_active is False
+    assert window._cursor_timer.isActive() is False
+    assert window.cursor().shape() == Qt.CursorShape.ArrowCursor
+
+
+def test_close_event_while_fullscreen_restores_windowed_state(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window._enter_fullscreen()
+    assert window._fullscreen_active is True
+
+    window.close()
+
+    assert window._fullscreen_active is False
+    assert window._cursor_timer.isActive() is False
+
+def test_zap_down_plays_next_channel(qtbot):
+    channels = make_channels()
+    window, playback = make_window(channels=channels)
+    playback.current_channel = channels[0]
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_Down)
+
+    assert playback.play_calls == [channels[1]]
+
+
+def test_zap_up_in_video_mode(qtbot):
+    channels = make_channels()
+    window, playback = make_window(channels=channels)
+    playback.current_channel = channels[1]
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_3, Qt.KeyboardModifier.AltModifier)
+    qtbot.keyClick(window, Qt.Key.Key_Up)
+
+    assert playback.play_calls == [channels[0]]
+
+
+def test_zap_down_at_last_wraps_to_first(qtbot):
+    channels = make_channels()
+    window, playback = make_window(channels=channels)
+    playback.current_channel = channels[2]
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_Down)
+
+    assert playback.play_calls == [channels[0]]
+
+
+def test_zap_up_at_first_wraps_to_last(qtbot):
+    channels = make_channels()
+    window, playback = make_window(channels=channels)
+    playback.current_channel = channels[0]
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_Up)
+
+    assert playback.play_calls == [channels[2]]
+
+
+def test_zap_empty_playlist_is_noop(qtbot):
+    window, playback = make_window(channels=[])
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_Down)
+
+    assert playback.play_calls == []
+
+
+def test_zap_with_no_current_channel_plays_first(qtbot):
+    channels = make_channels()
+    window, playback = make_window(channels=channels)
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_Down)
+
+    assert playback.play_calls == [channels[0]]
+
+
+def test_zap_arrows_fire_with_table_focused(qtbot):
+    channels = make_channels()
+    window, playback = make_window(channels=channels)
+    playback.current_channel = channels[0]
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+    window.table.setFocus()
+
+    qtbot.keyClick(window.table, Qt.Key.Key_Down)
+
+    assert playback.play_calls == [channels[1]]
+
+def test_splitter_move_flush_persists_state(qtbot):
+    saved = []
+    window, _ = make_window(save_callback=lambda cfg: saved.append(dict(cfg)))
+    qtbot.addWidget(window)
+    window.splitter.setSizes([300, 700])
+
+    window._arm_splitter_save()
+    qtbot.wait(350)
+
+    expected = encode_splitter_state(bytes(window.splitter.saveState()))
+    assert window._config["splitter_state"] == expected
+    assert saved and saved[-1]["splitter_state"] == expected
+
+
+def test_entering_video_writes_prehide_snapshot_synchronously(qtbot):
+    saved = []
+    window, _ = make_window(save_callback=lambda cfg: saved.append(dict(cfg)))
+    qtbot.addWidget(window)
+    window.splitter.setSizes([300, 700])
+    expected = encode_splitter_state(bytes(window.splitter.saveState()))
+
+    window._view_controller.activate(ViewMode.VIDEO)
+
+    assert window._config["splitter_state"] == expected
+    assert saved and saved[-1]["splitter_state"] == expected
+
+
+def test_debounce_flush_skipped_while_table_hidden(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window._view_controller.activate(ViewMode.VIDEO)
+    before = window._config.get("splitter_state")
+
+    window.splitter.setSizes([10, 890])
+    window._arm_splitter_save()
+    qtbot.wait(350)
+
+    assert window._config.get("splitter_state") == before
+
+
+def test_restart_in_video_returns_to_normal_restores_splitter(qtbot):
+    # El estado se genera desde una ventana ya montada: saveState captura los
+    # tamaños reales tras el layout, y el round-trip compara iguales (AC-8).
+    w1, _ = make_window()
+    w1.show()
+    QApplication.processEvents()
+    w1.splitter.setSizes([400, 800])
+    QApplication.processEvents()
+    reference = list(w1.splitter.sizes())
+    saved_state = encode_splitter_state(bytes(w1.splitter.saveState()))
+    w1.close()
+
+    window, _ = make_window(
+        config=make_config(view_mode="video", splitter_state=saved_state)
+    )
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+    assert window._view_controller.mode is ViewMode.VIDEO
+
+    qtbot.keyClick(window, Qt.Key.Key_1, Qt.KeyboardModifier.AltModifier)
+
+    assert window.splitter.sizes() == reference
+
+def _all_menu_actions(menu_bar):
+    actions = list(menu_bar.actions())
+    for action in list(actions):
+        if action.menu():
+            actions.extend(action.menu().actions())
+    return actions
+
+
+def test_all_menu_actions_enabled_in_compact_and_video(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    window._view_controller.activate(ViewMode.COMPACT)
+    assert all(a.isEnabled() for a in _all_menu_actions(window.menuBar()))
+
+    window._view_controller.activate(ViewMode.VIDEO)
+    assert all(a.isEnabled() for a in _all_menu_actions(window.menuBar()))
+
+
+def test_ctrl_g_opens_epg_grid_in_compact_and_video(qtbot, monkeypatch):
+    import src.infrastructure.ui.main_window as mw
+
+    recorded = []
+    class RecorderDialog:
+        def __init__(self, *args, **kwargs):
+            recorded.append("created")
+
+        def exec(self):
+            recorded.append("exec")
+
+    monkeypatch.setattr(mw, "EPGGridDialog", RecorderDialog)
+
+    window, _ = make_window()
+    window._epg_manager.has_data = True
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    window._view_controller.activate(ViewMode.COMPACT)
+    qtbot.keyClick(window, Qt.Key.Key_G, Qt.KeyboardModifier.ControlModifier)
+    assert recorded == ["created", "exec"]
+
+    window._view_controller.activate(ViewMode.VIDEO)
+    recorded.clear()
+    qtbot.keyClick(window, Qt.Key.Key_G, Qt.KeyboardModifier.ControlModifier)
+    assert recorded == ["created", "exec"]
+
+
+def test_ctrl_g_works_after_returning_to_normal(qtbot, monkeypatch):
+    import src.infrastructure.ui.main_window as mw
+
+    recorded = []
+    class RecorderDialog:
+        def __init__(self, *args, **kwargs):
+            recorded.append("created")
+
+        def exec(self):
+            recorded.append("exec")
+
+    monkeypatch.setattr(mw, "EPGGridDialog", RecorderDialog)
+
+    window, _ = make_window()
+    window._epg_manager.has_data = True
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_3, Qt.KeyboardModifier.AltModifier)
+    qtbot.keyClick(window, Qt.Key.Key_1, Qt.KeyboardModifier.AltModifier)
+    assert window.menuBar().isVisible()
+
+    qtbot.keyClick(window, Qt.Key.Key_G, Qt.KeyboardModifier.ControlModifier)
+    assert recorded == ["created", "exec"]
