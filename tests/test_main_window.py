@@ -1041,3 +1041,44 @@ def test_pip_video_widget_fills_pip_rect(qtbot):
     assert video.width() == 480
     assert video.height() == 270
 
+def test_help_menu_has_three_actions(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+
+    help_menu = None
+    for a in window.menuBar().actions():
+        if a.menu() and a.text().replace("&", "") == "Ayuda":
+            help_menu = a.menu()
+            break
+    assert help_menu is not None
+    sub = [a.text() for a in help_menu.actions()]
+    assert any("Versión" in t for t in sub)
+    assert any("Teclas" in t for t in sub)
+    assert any("Licencia" in t for t in sub)
+
+
+def test_help_actions_open_dialogs(qtbot, monkeypatch):
+    import src.infrastructure.ui.main_window as mw
+
+    recorded = []
+    monkeypatch.setattr(
+        mw.QMessageBox, "about",
+        lambda parent, title, text, *a, **k: recorded.append(("about", title)),
+    )
+    monkeypatch.setattr(
+        mw.QMessageBox, "information",
+        lambda parent, title, text, *a, **k: recorded.append(("info", title)),
+    )
+
+    window, _ = make_window()
+    qtbot.addWidget(window)
+
+    window._show_about()
+    window._show_shortcuts()
+    window._show_license()
+
+    titles = [t for _, t in recorded]
+    assert "Acerca de IPTV Viewer" in titles
+    assert "Atajos de teclado" in titles
+    assert "Licencia" in titles
+

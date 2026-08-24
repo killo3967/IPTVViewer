@@ -27,6 +27,31 @@ from src.infrastructure.ui.components.epg_grid import EPGGridDialog
 from src.domain.entities.channel import Channel
 from src.domain.entities.playlist import Playlist
 
+APP_VERSION = "1.0.0"
+
+MIT_LICENSE_TEXT = """MIT License
+
+Copyright (c) 2026 killo3967
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
 
 class SourceEditorDialog(QDialog):
     """Diálogo para añadir o editar una fuente M3U con nombre."""
@@ -500,6 +525,18 @@ class IPTVMainWindow(QMainWindow):
         proxy_action = config_menu.addAction("Configuración de &Proxy...")
         proxy_action.triggered.connect(self._open_proxy_config_dialog)
 
+        # Menú Ayuda
+        help_menu = menubar.addMenu("Ay&uda")
+
+        about_action = help_menu.addAction("&Versión...")
+        about_action.triggered.connect(self._show_about)
+
+        shortcuts_action = help_menu.addAction("&Teclas...")
+        shortcuts_action.triggered.connect(self._show_shortcuts)
+
+        license_action = help_menu.addAction("&Licencia...")
+        license_action.triggered.connect(self._show_license)
+
     def _update_playlists_menu(self):
         """Actualiza el menú dinámico de listas guardadas."""
         self._playlists_menu.clear()
@@ -841,6 +878,40 @@ class IPTVMainWindow(QMainWindow):
                 channel = item.data(Qt.ItemDataRole.UserRole)
                 if channel and channel.logo_url == url:
                     item.setIcon(icon)
+
+
+    def _show_about(self):
+        """Muestra el diálogo de versión (Acerca de)."""
+        QMessageBox.about(
+            self,
+            "Acerca de IPTV Viewer",
+            f"<b>IPTV Viewer</b><br>"
+            f"Versión {APP_VERSION}<br><br>"
+            "Visor de IPTV con arquitectura hexagonal.<br>"
+            "Motores VLC y mpv, EPG XMLTV y proxy Tor.<br><br>"
+            "Licencia MIT — Copyright (c) 2026 killo3967",
+        )
+
+    def _show_shortcuts(self):
+        """Muestra la lista de atajos de teclado."""
+        QMessageBox.information(
+            self,
+            "Atajos de teclado",
+            "<table>"
+            "<tr><td><b>Alt+1</b></td><td>Modo Normal</td></tr>"
+            "<tr><td><b>Alt+2</b></td><td>Modo Compacto</td></tr>"
+            "<tr><td><b>Alt+3</b></td><td>Modo Video</td></tr>"
+            "<tr><td><b>Alt+4</b> / <b>P</b></td><td>Ventana PIP</td></tr>"
+            "<tr><td><b>F</b></td><td>Pantalla completa</td></tr>"
+            "<tr><td><b>Esc</b></td><td>Salir de pantalla completa</td></tr>"
+            "<tr><td><b>↑</b> / <b>↓</b></td><td>Canal anterior / siguiente</td></tr>"
+            "<tr><td><b>Ctrl+G</b></td><td>Parrilla EPG</td></tr>"
+            "</table>",
+        )
+
+    def _show_license(self):
+        """Muestra el texto de la licencia MIT."""
+        QMessageBox.information(self, "Licencia", MIT_LICENSE_TEXT)
 
     def closeEvent(self, event):
         if self._fullscreen_active:
