@@ -14,6 +14,7 @@ from src.infrastructure.adapters.qt_logo_loader_adapter import QtLogoLoaderAdapt
 from src.application.services.playlist_loader import PlaylistLoader
 from src.application.services.playback_manager import PlaybackManager
 from src.application.services.epg_manager import EPGManager
+from src.application.services.view_mode_controller import ViewMode
 from src.infrastructure.ui.main_window import IPTVMainWindow
 
 # Configuración básica de rutas
@@ -43,11 +44,12 @@ def setup_logger():
     )
     logging.info(f"\n{'='*60}\nNUEVA SESIÓN: {datetime.now()}\n{'='*60}")
 
-def load_config():
+def load_config(config_path=None):
     """Carga configuración .ini con soporte para formato antiguo (migración automática)."""
+    path = config_path or CONFIG_FILE
     parser = configparser.ConfigParser()
-    if CONFIG_FILE.exists():
-        parser.read(CONFIG_FILE, encoding='utf-8')
+    if path.exists():
+        parser.read(path, encoding='utf-8')
 
     # Asegurar secciones
     if 'SETTINGS' not in parser:
@@ -163,7 +165,10 @@ def load_config():
         'player_engine': player_engine,
         'vlc_config': vlc_config,
         'mpv_config': mpv_config,
-        'proxy_config': proxy_config
+        'proxy_config': proxy_config,
+        'view_mode': ViewMode.parse(parser.get('SETTINGS', 'view_mode', fallback='')).value,
+        'splitter_state': parser.get('SETTINGS', 'splitter_state', fallback=''),
+        'pip_geometry': parser.get('SETTINGS', 'pip_geometry', fallback=''),
     }
 
 
@@ -186,8 +191,9 @@ def get_active_epg(config_data: dict) -> str:
     """Retorna la URL EPG de la fuente activa."""
     return _get_active_source(config_data).get('epg', '')
 
-def save_config(config_data):
+def save_config(config_data, config_path=None):
     """Guarda los cambios de configuración en config.ini (formato nuevo con fuentes por nombre)."""
+    path = config_path or CONFIG_FILE
     parser = configparser.ConfigParser()
 
     # Ajustes generales
@@ -195,6 +201,10 @@ def save_config(config_data):
         'active': str(config_data.get('active', 0)),
         'hw_acceleration': str(config_data.get('hw_acceleration', False)),
         'player_engine': config_data.get('player_engine', 'vlc'),
+        # Claves de modos de vista (REQ-8): siempre str, nunca None
+        'view_mode': config_data.get('view_mode', 'normal'),
+        'splitter_state': config_data.get('splitter_state', ''),
+        'pip_geometry': config_data.get('pip_geometry', ''),
     }
 
     # Fuentes M3U (con nombre)
@@ -218,11 +228,12 @@ def save_config(config_data):
     proxy_config = config_data.get('proxy_config', {})
     parser['PROXY'] = {k: str(v) for k, v in proxy_config.items()}
 
-    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+    with open(path, 'w', encoding='utf-8') as f:
         parser.write(f)
     logging.info("Configuración guardada correctamente.")
 
-from src.infrastructure.utils.proxy import setup_proxy, get_standardized_proxy_config
+from src.infrastructure.utils.proxy import setup_proxy
+from src.infrastructure.adapters.player_factory import build_player_adapter
 
 def main():
     # 1. Setup inicial
@@ -235,21 +246,15 @@ def main():
     
     # 3. Instanciar Adaptador según configuración (Normalizando config de proxy)
     engine = config.get('player_engine', 'vlc')
-    proxy_cfg = config.get('proxy_config')
-    std_proxy_cfg = get_standardized_proxy_config(proxy_cfg)
-    
-    if engine == 'mpv':
-        player_adapter = MpvPlayerAdapter(
-            mpv_config=config.get('mpv_config'),
-            proxy_config=std_proxy_cfg
-        )
-        logging.info("Motor de reproducción: mpv")
-    else:
-        player_adapter = VlcPlayerAdapter(
-            vlc_config=config.get('vlc_config'),
-            proxy_config=std_proxy_cfg
-        )
-        logging.info("Motor de reproducción: VLC")
+    player_adapter = build_player_adapter(
+        engine,
+        config.get('vlc_config'),
+        config.get('mpv_config'),
+        config.get('proxy_config'),
+        VlcPlayerAdapter,
+        MpvPlayerAdapter,
+    )
+    logging.info(f"Motor de reproducción: {engine}")
 
     m3u_repo = FileM3URepository()
     xmltv_repo = XMLTVRepository()
