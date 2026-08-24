@@ -94,6 +94,7 @@ class IPTVMainWindow(QMainWindow):
         self._splitter_save_timer = None
         self._pip_window = None
         self._pip_open = False
+        self._pip_geometry_save_timer = None
 
         # UI Initialization
         self.setWindowTitle("IPTV Viewer – Arquitectura Hexagonal")
@@ -288,6 +289,7 @@ class IPTVMainWindow(QMainWindow):
     def _open_pip(self):
         if self._pip_window is None:
             self._pip_window = PIPWindow(self)
+            self._pip_window.geometry_changed.connect(self._arm_pip_geometry_save)
         pip = self._pip_window
         pip.set_video_widget(self.video_widget)
         self._apply_pip_geometry(pip)
@@ -297,12 +299,37 @@ class IPTVMainWindow(QMainWindow):
 
     def _close_pip(self):
         pip = self._pip_window
+        # Cancelar el guardado diferido: los cambios de geometría durante el
+        # cierre no deben persistirse (WU 4.3 / REFACTOR).
+        if self._pip_geometry_save_timer is not None:
+            self._pip_geometry_save_timer.stop()
         pip.hide()
         self.video_widget.setParent(self.splitter)
         self.splitter.insertWidget(1, self.video_widget)
         self._pip_open = False
         self._apply_layout(self._view_controller.mode)
         self._retarget_video()
+
+    def _arm_pip_geometry_save(self):
+        """Arma el guardado diferido (300 ms) de pip_geometry (REQ-8).
+
+        Se dispara desde la señal geometry_changed de PIPWindow (move/resize
+        del cuerpo o del grip); el debounce evita escrituras a ráfagas.
+        """
+        if self._pip_geometry_save_timer is None:
+            self._pip_geometry_save_timer = QTimer(self)
+            self._pip_geometry_save_timer.setSingleShot(True)
+            self._pip_geometry_save_timer.timeout.connect(self._flush_pip_geometry)
+        self._pip_geometry_save_timer.start(300)
+
+    def _flush_pip_geometry(self):
+        """Persiste la geometría actual del PIP vía save_callback (REQ-8)."""
+        if self._pip_window is None or not self._pip_open:
+            return
+        x, y, w, h = self._pip_window.geometry().getRect()
+        self._config['pip_geometry'] = geometry_to_str(x, y, w, h)
+        if self._save_callback:
+            self._save_callback(self._config)
 
     def _apply_pip_geometry(self, pip):
         """Aplica geometría persistida válida o la colocación por defecto."""

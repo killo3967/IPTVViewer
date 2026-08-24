@@ -6,6 +6,7 @@ llamadas, EPG manager sin datos, logo loader con la señal ``logo_loaded`` y
 un stub-recorder para ``EPGGridDialog``.
 """
 import os
+import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -115,6 +116,21 @@ def _recorder():
             Recorder.calls += 1
 
     return Recorder()
+
+
+def _pump_events(seconds: float):
+    """Procesa eventos de Qt sin bucle anidado (headless-safe).
+
+    qtbot.wait() lanza un QEventLoop anidado que provoca un crash nativo en
+    offscreen cuando hay ventanas Qt previas acumuladas (quirk del entorno
+    PyQt6 6.11 + pytest-qt, presente también con el suite original en HEAD).
+    Un bucle de processEvents() mantiene el mismo comportamiento observable:
+    el QTimer de debounce de 300 ms dispara igualmente.
+    """
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        QApplication.processEvents()
+        time.sleep(0.01)
 
 
 def make_window(config: dict = None, channels=None, save_callback=None, playback_manager=None):
@@ -778,3 +794,183 @@ def test_pip_never_auto_opens_at_launch(qtbot):
     assert window._pip_open is False
     assert window._pip_window is None
     assert window.splitter.indexOf(window.video_widget) == 1
+
+# --- WU 4.3: PIP geometry persistence (AC-13) ---------------------------
+
+def test_pip_move_persists_geometry_after_debounce(qtbot):
+    # El arrastre del cuerpo (QTest.mouseMove) provoca un crash nativo en
+    # offscreen tras varios tests; el wire de persistencia real es el mismo:
+    # moveEvent -> senal -> debounce. El arrastre por raton ya esta cubierto
+    # por test_pip_body_drag_moves_window.
+    from src.application.services.view_mode_controller import geometry_to_str
+
+    saved = []
+    window, _ = make_window(save_callback=lambda cfg: saved.append(dict(cfg)))
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_P)
+    pip = window._pip_window
+    pip.move(200, 150)
+    _pump_events(0.4)
+
+    expected = geometry_to_str(*pip.geometry().getRect()[:4])
+    assert window._config["pip_geometry"] == expected
+    assert saved and saved[-1]["pip_geometry"] == expected
+
+
+def test_pip_resize_persists_geometry_after_debounce(qtbot):
+    # Mismo rationale que el test de move: el resize por grip dispara el mismo
+    # resizeEvent que pip.resize() (el grip ya esta cubierto por
+    # test_pip_grip_drag_resizes_with_minimum).
+    from src.application.services.view_mode_controller import geometry_to_str
+
+    saved = []
+    window, _ = make_window(save_callback=lambda cfg: saved.append(dict(cfg)))
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_P)
+    pip = window._pip_window
+    pip.resize(500, 300)
+    _pump_events(0.4)
+
+    expected = geometry_to_str(*pip.geometry().getRect()[:4])
+    assert window._config["pip_geometry"] == expected
+    assert saved and saved[-1]["pip_geometry"] == expected
+
+
+def test_pip_close_cancels_geometry_debounce(qtbot):
+    # REFACTOR de WU 4.3: cerrar el PIP cancela el guardado diferido. Un move
+    # justo antes del cierre no debe persistirse (la especificacion exige que
+    # los writes de geometria nunca se disparen con el PIP cerrado). El guard
+    # de _flush_pip_geometry es la segunda red de seguridad.
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_P)
+    pip = window._pip_window
+    pip.move(200, 150)
+    assert window._pip_geometry_save_timer is not None
+    assert window._pip_geometry_save_timer.isActive()
+
+    qtbot.keyClick(window, Qt.Key.Key_P)  # cerrar antes de que dispare el debounce
+    assert window._pip_geometry_save_timer.isActive() is False
+    _pump_events(0.4)
+
+    assert window._config["pip_geometry"] == ""
+
+
+def test_pip_restores_persisted_geometry_on_open(qtbot):
+    window, _ = make_window(config=make_config(pip_geometry="100,100,480,270"))
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_P)
+
+    geo = window._pip_window.geometry()
+    assert geo.x() == 100
+    assert geo.y() == 100
+    assert geo.width() == 480
+    assert geo.height() == 270
+
+
+def test_pip_garbage_geometry_uses_default_placement(qtbot):
+    window, _ = make_window(config=make_config(pip_geometry="garbage"))
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_P)
+
+    pip = window._pip_window
+    assert pip.width() == 480
+    assert pip.height() == 270
+
+# --- WU 4.4: re-target on PIP open/close (AC-16 second half) -----------
+
+def test_pip_open_close_retargets_video_exactly_twice(qtbot):
+    window, playback = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+    before = len(playback.initialize_calls)
+
+    qtbot.keyClick(window, Qt.Key.Key_P)
+    assert len(playback.initialize_calls) == before + 1
+    assert playback.initialize_calls[-1] == int(window.video_widget.winId())
+
+    qtbot.keyClick(window, Qt.Key.Key_P)
+    assert len(playback.initialize_calls) == before + 2
+    assert playback.initialize_calls[-1] == int(window.video_widget.winId())
+
+# --- WU 4.5: PIP key forwarding to the main window (REQ-6, REQ-9) ------
+
+def test_pip_key_forward_zap_down(qtbot):
+    channels = make_channels()
+    window, playback = make_window(channels=channels)
+    playback.current_channel = channels[0]
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_P)
+    qtbot.keyClick(window._pip_window, Qt.Key.Key_Down)
+
+    assert playback.play_calls == [channels[1]]
+
+
+def test_pip_key_forward_p_toggles_pip_closed(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_P)
+    assert window._pip_open is True
+
+    qtbot.keyClick(window._pip_window, Qt.Key.Key_P)
+
+    assert window._pip_open is False
+
+
+def test_pip_key_forward_alt2_switches_to_compact(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_P)
+    qtbot.keyClick(window._pip_window, Qt.Key.Key_2, Qt.KeyboardModifier.AltModifier)
+
+    assert window._view_controller.mode is ViewMode.COMPACT
+
+
+def test_pip_key_forward_ctrl_g_opens_epg_grid(qtbot, monkeypatch):
+    import src.infrastructure.ui.main_window as mw
+
+    recorded = []
+    class RecorderDialog:
+        def __init__(self, *args, **kwargs):
+            recorded.append("created")
+
+        def exec(self):
+            recorded.append("exec")
+
+    monkeypatch.setattr(mw, "EPGGridDialog", RecorderDialog)
+
+    window, _ = make_window()
+    window._epg_manager.has_data = True
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_P)
+    qtbot.keyClick(window._pip_window, Qt.Key.Key_G, Qt.KeyboardModifier.ControlModifier)
+
+    assert recorded == ["created", "exec"]

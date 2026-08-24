@@ -4,7 +4,7 @@ REQ-6: ventana desacoplada (DETACH), siempre encima, sin marco, arrastrable
 por el cuerpo y redimensionable por el grip inferior-derecho. Los eventos de
 teclado se reenvían a la ventana principal (key forwarding).
 """
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import QApplication, QWidget
 
 
@@ -48,6 +48,10 @@ class ResizeGrip(QWidget):
 class PIPWindow(QWidget):
     """Ventana PIP frameless, siempre encima, con reenvío de teclas."""
 
+    # Señal emitida al mover/redimensionar la ventana: la ventana principal
+    # la usa para persistir pip_geometry con debounce (REQ-8 / WU 4.3).
+    geometry_changed = pyqtSignal()
+
     def __init__(self, key_forward_target: QWidget):
         super().__init__(
             key_forward_target,
@@ -66,6 +70,11 @@ class PIPWindow(QWidget):
         widget.setParent(self)
         widget.show()
 
+    def moveEvent(self, event):
+        """Notifica el movimiento del cuerpo (arrastre) para persistencia."""
+        super().moveEvent(event)
+        self.geometry_changed.emit()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         # Mantener el grip anclado abajo-derecha
@@ -75,6 +84,7 @@ class PIPWindow(QWidget):
             self.height() - grip_size.height(),
         )
         self._resize_grip.raise_()
+        self.geometry_changed.emit()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
