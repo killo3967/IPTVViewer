@@ -188,7 +188,7 @@ def test_compact_layout_hides_columns_and_menubar(qtbot):
     assert window.table.isVisible()
     assert not window.table.isColumnHidden(0)
     assert window.table.isColumnHidden(1)
-    assert window.table.isColumnHidden(2)
+    assert not window.table.isColumnHidden(2)
     assert not window.menuBar().isVisible()
     assert window.table.contextMenuPolicy() == Qt.ContextMenuPolicy.NoContextMenu
     assert window.video_widget.contextMenuPolicy() == Qt.ContextMenuPolicy.NoContextMenu
@@ -235,7 +235,7 @@ def test_startup_applies_persisted_compact_mode(qtbot):
     assert window.table.isVisible()
     assert not window.table.isColumnHidden(0)
     assert window.table.isColumnHidden(1)
-    assert window.table.isColumnHidden(2)
+    assert not window.table.isColumnHidden(2)
     assert not window.menuBar().isVisible()
     assert window.table.contextMenuPolicy() == Qt.ContextMenuPolicy.NoContextMenu
 
@@ -974,3 +974,69 @@ def test_pip_key_forward_ctrl_g_opens_epg_grid(qtbot, monkeypatch):
     qtbot.keyClick(window._pip_window, Qt.Key.Key_G, Qt.KeyboardModifier.ControlModifier)
 
     assert recorded == ["created", "exec"]
+# --- Follow-up fixes: compacto muestra programacion, F=ALT+3+fullscreen, OSD, PIP fit ---
+
+def test_f_forces_video_mode_then_restores_previous(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+    window.showFullScreen = _recorder()
+    window.showNormal = _recorder()
+
+    assert window._view_controller.mode is ViewMode.NORMAL
+
+    qtbot.keyClick(window, Qt.Key.Key_F)
+    assert window._fullscreen_active is True
+    assert window._view_controller.mode is ViewMode.VIDEO
+
+    qtbot.keyClick(window, Qt.Key.Key_F)
+    assert window._fullscreen_active is False
+    assert window._view_controller.mode is ViewMode.NORMAL
+
+
+def test_channel_overlay_shown_on_video_mode_and_zap(qtbot):
+    channels = make_channels()
+    window, playback = make_window(channels=channels)
+    playback.current_channel = channels[0]
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_3, Qt.KeyboardModifier.AltModifier)
+    assert window._channel_overlay.isVisible()
+    assert window._channel_overlay.text() == "c1"
+
+    qtbot.keyClick(window, Qt.Key.Key_Down)
+    assert window._channel_overlay.text() == "c2"
+
+
+def test_channel_overlay_hides_after_two_seconds(qtbot):
+    channels = make_channels()
+    window, playback = make_window(channels=channels)
+    playback.current_channel = channels[0]
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    window._show_channel_overlay()
+    assert window._channel_overlay.isVisible()
+
+    _pump_events(2.1)
+    assert not window._channel_overlay.isVisible()
+
+
+def test_pip_video_widget_fills_pip_rect(qtbot):
+    from src.infrastructure.ui.components.pip_window import PIPWindow
+
+    pip = PIPWindow(QWidget())
+    qtbot.addWidget(pip)
+    pip.resize(480, 270)
+    video = QWidget()
+
+    pip.set_video_widget(video)
+
+    assert video.parent() is pip
+    assert video.width() == 480
+    assert video.height() == 270
+

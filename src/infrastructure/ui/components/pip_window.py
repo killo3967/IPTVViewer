@@ -62,12 +62,19 @@ class PIPWindow(QWidget):
         self._key_forward_target = key_forward_target
         self._drag_start_global = None
         self._drag_start_pos = None
+        self._video_widget = None
         self._resize_grip = ResizeGrip(self)
         self.setMinimumSize(ResizeGrip.MIN_WIDTH, ResizeGrip.MIN_HEIGHT)
 
     def set_video_widget(self, widget: QWidget) -> None:
-        """Re-parenta el widget de video dentro de la ventana PIP."""
+        """Re-parenta el widget de video dentro de la ventana PIP.
+
+        El widget se redimensiona para llenar el PIP, de modo que el motor
+        (VLC/mpv) reajuste el video al area completa sin recortar.
+        """
+        self._video_widget = widget
         widget.setParent(self)
+        widget.setGeometry(self.rect())
         widget.show()
 
     def moveEvent(self, event):
@@ -77,6 +84,8 @@ class PIPWindow(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        if self._video_widget is not None:
+            self._video_widget.setGeometry(self.rect())
         # Mantener el grip anclado abajo-derecha
         grip_size = self._resize_grip.size()
         self._resize_grip.move(

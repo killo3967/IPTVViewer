@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QSplitter, QWidget, QVBoxLayout, QHeaderView,
     QMenuBar, QFileDialog, QInputDialog, QMenu,
     QDialog, QFormLayout, QLineEdit, QDialogButtonBox,
-    QApplication,
+    QApplication, QLabel,
 )
 from PyQt6.QtGui import QColor, QPixmap, QAction, QActionGroup, QIcon, QKeySequence, QShortcut
 from PyQt6.QtCore import Qt, QTimer, QSize, QEvent
@@ -95,6 +95,8 @@ class IPTVMainWindow(QMainWindow):
         self._pip_window = None
         self._pip_open = False
         self._pip_geometry_save_timer = None
+        self._overlay_timer = None
+        self._pre_fullscreen_mode = None
 
         # UI Initialization
         self.setWindowTitle("IPTV Viewer – Arquitectura Hexagonal")
@@ -159,6 +161,16 @@ class IPTVMainWindow(QMainWindow):
         self.video_widget = QWidget()
         self.video_widget.setStyleSheet("background-color: black;")
         splitter.addWidget(self.video_widget)
+
+        # OSD: overlay que muestra el nombre del canal actual (2 s)
+        self._channel_overlay = QLabel(self.video_widget)
+        self._channel_overlay.setStyleSheet(
+            "color: white; background-color: rgba(0, 0, 0, 170);"
+            " padding: 8px 16px; border-radius: 6px;"
+            " font-size: 18px; font-weight: bold;"
+        )
+        self._channel_overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._channel_overlay.hide()
         
         # Inicializar el visor de video en el reproductor
         self._playback_manager.initialize_display(int(self.video_widget.winId()))
@@ -183,7 +195,7 @@ class IPTVMainWindow(QMainWindow):
         elif mode is ViewMode.COMPACT:
             self.table.show()
             self.table.setColumnHidden(1, True)
-            self.table.setColumnHidden(2, True)
+            self.table.setColumnHidden(2, False)
             self.menuBar().hide()
             self.table.setContextMenuPolicy(no_menu_policy)
             self.video_widget.setContextMenuPolicy(no_menu_policy)
@@ -206,6 +218,8 @@ class IPTVMainWindow(QMainWindow):
         self._config['view_mode'] = new.value
         if self._save_callback:
             self._save_callback(self._config)
+        if new is ViewMode.VIDEO:
+            self._show_channel_overlay()
 
     def _retarget_video(self):
         """Re-apunta la salida del reproductor al winId actual (REQ-7).
@@ -356,6 +370,25 @@ class IPTVMainWindow(QMainWindow):
         )
         if idx is not None:
             self._playback_manager.play_channel(channels[idx])
+            if self._view_controller.mode is ViewMode.VIDEO or self._fullscreen_active:
+                self._show_channel_overlay()
+
+    def _show_channel_overlay(self):
+        """Muestra el nombre del canal actual en un OSD durante 2 s."""
+        channel = self._playback_manager.current_channel
+        name = channel.name if isinstance(channel, Channel) else ""
+        self._channel_overlay.setText(name)
+        self._channel_overlay.adjustSize()
+        x = (self.video_widget.width() - self._channel_overlay.width()) // 2
+        y = self.video_widget.height() - self._channel_overlay.height() - 40
+        self._channel_overlay.move(max(x, 0), max(y, 0))
+        self._channel_overlay.show()
+        self._channel_overlay.raise_()
+        if self._overlay_timer is None:
+            self._overlay_timer = QTimer(self)
+            self._overlay_timer.setSingleShot(True)
+            self._overlay_timer.timeout.connect(self._channel_overlay.hide)
+        self._overlay_timer.start(2000)
 
     def _toggle_fullscreen(self):
         """Alterna el eje de pantalla completa (REQ-4). Estado de sesión."""
@@ -365,7 +398,8 @@ class IPTVMainWindow(QMainWindow):
             self._enter_fullscreen()
 
     def _enter_fullscreen(self):
-        """Entra en pantalla completa y arma el timer de ocultar cursor."""
+        """Entra en pantalla completa forzando el modo VIDEO (F = ALT+3 + fullscreen)."""
+        self._pre_fullscreen_mode = self._view_controller.mode
         self._fullscreen_active = True
         self.showFullScreen()
         self._cursor_timer = QTimer(self)
@@ -377,6 +411,8 @@ class IPTVMainWindow(QMainWindow):
         ]
         for w in self._fullscreen_watchers:
             w.installEventFilter(self)
+        self._view_controller.activate(ViewMode.VIDEO)
+        self._show_channel_overlay()
 
     def _exit_fullscreen(self):
         """Única ruta de salida de pantalla completa (F-off, Esc, closeEvent).
@@ -394,6 +430,9 @@ class IPTVMainWindow(QMainWindow):
             w.removeEventFilter(self)
         self._fullscreen_watchers = []
         self.showNormal()
+        if self._pre_fullscreen_mode is not None:
+            self._view_controller.activate(self._pre_fullscreen_mode)
+            self._pre_fullscreen_mode = None
 
     def _on_cursor_timeout(self):
         """Oculta el cursor tras 3 s sin movimiento (REQ-4)."""
