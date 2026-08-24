@@ -1056,6 +1056,80 @@ def test_help_menu_has_three_actions(qtbot):
     assert any("Teclas" in t for t in sub)
     assert any("Licencia" in t for t in sub)
 
+def test_help_menu_has_update_and_repo_actions(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+
+    help_menu = None
+    for a in window.menuBar().actions():
+        if a.menu() and a.text().replace("&", "") == "Ayuda":
+            help_menu = a.menu()
+            break
+    assert help_menu is not None
+    sub = [a.text().replace("&", "") for a in help_menu.actions()]
+    assert any("actualizaciones" in t for t in sub)
+    assert any("Repositorio" in t for t in sub)
+
+
+def test_open_repository_opens_url(qtbot, monkeypatch):
+    import src.infrastructure.ui.main_window as mw
+
+    recorded = []
+    monkeypatch.setattr(mw.QDesktopServices, "openUrl", lambda url: recorded.append(url.toString()))
+
+    window, _ = make_window()
+    qtbot.addWidget(window)
+
+    window._open_repository()
+
+    assert recorded == ["https://github.com/killo3967/IPTVViewer"]
+
+
+def test_check_updates_newer_version(qtbot, monkeypatch):
+    import src.infrastructure.ui.main_window as mw
+
+    recorded = []
+    monkeypatch.setattr(
+        mw.QMessageBox, "information",
+        lambda parent, title, text, *a, **k: recorded.append((title, text)),
+    )
+
+    class FakeResponse:
+        status_code = 200
+        def json(self):
+            return {"tag_name": "v9.9.9"}
+
+    monkeypatch.setattr(mw.requests, "get", lambda *a, **k: FakeResponse())
+
+    window, _ = make_window()
+    qtbot.addWidget(window)
+
+    window._check_updates()
+
+    assert recorded and "9.9.9" in recorded[0][1]
+
+
+def test_check_updates_handles_no_network(qtbot, monkeypatch):
+    import src.infrastructure.ui.main_window as mw
+
+    recorded = []
+    monkeypatch.setattr(
+        mw.QMessageBox, "warning",
+        lambda parent, title, text, *a, **k: recorded.append(title),
+    )
+
+    def fake_get(*a, **k):
+        raise mw.requests.exceptions.ConnectionError("no net")
+
+    monkeypatch.setattr(mw.requests, "get", fake_get)
+
+    window, _ = make_window()
+    qtbot.addWidget(window)
+
+    window._check_updates()
+
+    assert recorded == ["Actualización"]
+
 
 def test_help_actions_open_dialogs(qtbot, monkeypatch):
     import src.infrastructure.ui.main_window as mw

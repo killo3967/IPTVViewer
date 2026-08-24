@@ -1,4 +1,5 @@
 import logging
+import requests
 from PyQt6.QtWidgets import (
     QMainWindow, QTableWidget, QTableWidgetItem, QMessageBox,
     QSplitter, QWidget, QVBoxLayout, QHeaderView,
@@ -6,8 +7,8 @@ from PyQt6.QtWidgets import (
     QDialog, QFormLayout, QLineEdit, QDialogButtonBox,
     QApplication, QLabel,
 )
-from PyQt6.QtGui import QColor, QPixmap, QAction, QActionGroup, QIcon, QKeySequence, QShortcut
-from PyQt6.QtCore import Qt, QTimer, QSize, QEvent
+from PyQt6.QtGui import QColor, QPixmap, QAction, QActionGroup, QIcon, QKeySequence, QShortcut, QDesktopServices
+from PyQt6.QtCore import Qt, QTimer, QSize, QEvent, QUrl
 
 from src.application.services.playlist_loader import PlaylistLoader
 from src.application.services.playback_manager import PlaybackManager
@@ -51,6 +52,13 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
+
+
+def _version_tuple(v):
+    try:
+        return tuple(int(x) for x in v.split("."))
+    except (ValueError, AttributeError):
+        return (0,)
 
 
 class SourceEditorDialog(QDialog):
@@ -537,6 +545,12 @@ class IPTVMainWindow(QMainWindow):
         license_action = help_menu.addAction("&Licencia...")
         license_action.triggered.connect(self._show_license)
 
+        updates_action = help_menu.addAction("Comprobar &actualizaciones...")
+        updates_action.triggered.connect(self._check_updates)
+
+        repo_action = help_menu.addAction("&Repositorio en GitHub...")
+        repo_action.triggered.connect(self._open_repository)
+
     def _update_playlists_menu(self):
         """Actualiza el menú dinámico de listas guardadas."""
         self._playlists_menu.clear()
@@ -912,6 +926,34 @@ class IPTVMainWindow(QMainWindow):
     def _show_license(self):
         """Muestra el texto de la licencia MIT."""
         QMessageBox.information(self, "Licencia", MIT_LICENSE_TEXT)
+
+    def _open_repository(self):
+        """Abre el repositorio de GitHub en el navegador."""
+        QDesktopServices.openUrl(QUrl("https://github.com/killo3967/IPTVViewer"))
+
+    def _check_updates(self):
+        """Comprueba si hay una versión más reciente en GitHub Releases."""
+        try:
+            resp = requests.get(
+                "https://api.github.com/repos/killo3967/IPTVViewer/releases/latest",
+                timeout=5,
+            )
+            if resp.status_code == 200:
+                latest = resp.json().get("tag_name", "").lstrip("v")
+                if _version_tuple(latest) > _version_tuple(APP_VERSION):
+                    QMessageBox.information(
+                        self, "Actualización",
+                        f"Hay una versión más reciente: {latest} (actual: {APP_VERSION}).",
+                    )
+                else:
+                    QMessageBox.information(
+                        self, "Actualización",
+                        f"Ya tienes la última versión ({APP_VERSION}).",
+                    )
+            else:
+                QMessageBox.warning(self, "Actualización", "No se pudo comprobar la versión.")
+        except Exception:
+            QMessageBox.warning(self, "Actualización", "No se pudo comprobar la versión (¿sin conexión?).")
 
     def closeEvent(self, event):
         if self._fullscreen_active:
