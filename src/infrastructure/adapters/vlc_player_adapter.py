@@ -1,16 +1,41 @@
 import logging
 import sys
-
-import vlc
+from typing import Any, ClassVar
 
 from src.domain.ports.i_player import IPlayer
+from src.infrastructure.utils.vlc_bootstrap import configure_vlc_env, detect_vlc_lib
+
+# Configurar python-vlc ANTES de importarlo: VLC portátil o carpeta señalada.
+_libvlc_path = detect_vlc_lib()
+if _libvlc_path is not None:
+    configure_vlc_env(_libvlc_path.parent)
+
+_vlc_import_error: Exception | None = None
+
+
+def _import_vlc() -> Any:
+    """Importa python-vlc (el entorno ya configurado). None si VLC no está.
+
+    El import es diferido (no a nivel de módulo) para que un VLC instalado o
+    señalado después de importar el adaptador se recoja en el siguiente
+    ``_init_vlc`` sin reiniciar la app. Un fallo de import no tumba la app:
+    se registra en ``_vlc_import_error`` y la instanciación falla limpia.
+    """
+    global _vlc_import_error
+    try:
+        import vlc
+    except Exception as exc:  # VLC ausente: python-vlc no puede cargar libvlc
+        _vlc_import_error = exc
+        return None
+    _vlc_import_error = None
+    return vlc
 
 
 class VlcPlayerAdapter(IPlayer):
     """Adaptador de infraestructura que utiliza la librería VLC para la reproducción."""
 
     # Valores por defecto para la configuración de VLC
-    DEFAULT_CONFIG = {
+    DEFAULT_CONFIG: ClassVar[dict] = {
         "reset_plugins_cache": True,
         "network_caching": 5000,
         "clock_jitter": 500,
@@ -24,7 +49,7 @@ class VlcPlayerAdapter(IPlayer):
         "hw_acceleration": False,
     }
 
-    def __init__(self, vlc_config: dict = None, proxy_config: dict = None):
+    def __init__(self, vlc_config: dict | None = None, proxy_config: dict | None = None):
         """
         Inicializa el adaptador con una configuración personalizada.
         """
@@ -33,16 +58,23 @@ class VlcPlayerAdapter(IPlayer):
             self._config.update(vlc_config)
 
         self._proxy_config = proxy_config
-        self._instance = None
-        self._player = None
-        self._window_id = None
-        self._current_url = None
+        self._instance: Any = None
+        self._player: Any = None
+        self._window_id: int | None = None
+        self._current_url: str | None = None
         self._init_vlc()
 
     def _init_vlc(self):
         """Inicializa o reinicializa la instancia de VLC con las opciones actuales."""
         # Liberar si ya existe
         self.release()
+
+        vlc = _import_vlc()
+        if vlc is None:
+            raise RuntimeError(
+                "VLC no está disponible (import vlc falló: "
+                f"{_vlc_import_error}). Resuélvelo desde el diálogo de VLC del arranque."
+            )
 
         vlc_args = []
 
