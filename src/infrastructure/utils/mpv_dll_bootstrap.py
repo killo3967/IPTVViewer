@@ -99,7 +99,9 @@ def _download_archive(
 ) -> None:
     """Descarga el .7z a ``tmp_archive`` reportando progreso por bytes."""
     try:
-        with requests.get(
+        session = requests.Session()
+        session.trust_env = False  # descarga directa, sin pasar por el proxy configurado
+        with session.get(
             MPV_ARCHIVE_URL, stream=True, timeout=_DOWNLOAD_TIMEOUT
         ) as resp:
             resp.raise_for_status()

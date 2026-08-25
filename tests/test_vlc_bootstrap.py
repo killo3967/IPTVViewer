@@ -5,8 +5,8 @@ El módulo de bootstrap es puro (sin PyQt): la UI consume ``is_vlc_available``,
 adaptador ``vlc_player_adapter`` cuando VLC no está disponible: el módulo debe
 importarse sin tumbar la app y la instanciación debe fallar limpiamente.
 
-Estos tests NO usan red real ni VLC real: ``requests.get``, ``py7zr`` y las
-rutas del sistema van mockeados.
+Estos tests NO usan red real ni VLC real: ``requests.Session`` (descarga),
+``py7zr`` y las rutas del sistema van mockeados.
 """
 
 import builtins
@@ -51,7 +51,7 @@ def _make_libvlc(vlc_dir: Path) -> Path:
 
 
 class FakeResponse:
-    """Respuesta HTTP mínima para ``requests.get(stream=True)``."""
+    """Respuesta HTTP mínima para ``session.get(stream=True)``."""
 
     def __init__(self, content: bytes, headers: dict | None = None):
         self.content = content
@@ -185,10 +185,14 @@ def test_configure_vlc_env_sets_lib_and_module_paths(tmp_path):
 
 def test_install_portable_downloads_extracts_and_returns_dir(tmp_path):
     dest = tmp_path / "app"
+    get = mock.Mock(return_value=FakeResponse(b"7z-fake-archive-bytes"))
+    session = mock.Mock()
+    session.trust_env = True
+    session.get = get
     with _patch_default_dir(tmp_path) as default_dir, mock.patch(
-        "src.infrastructure.utils.vlc_bootstrap.requests.get",
-        return_value=FakeResponse(b"7z-fake-archive-bytes"),
-    ) as get, mock.patch(
+        "src.infrastructure.utils.vlc_bootstrap.requests.Session",
+        return_value=session,
+    ), mock.patch(
         "src.infrastructure.utils.vlc_bootstrap.py7zr.SevenZipFile",
         FakeSevenZipFile,
     ):
@@ -203,9 +207,13 @@ def test_install_portable_downloads_extracts_and_returns_dir(tmp_path):
 def test_install_portable_reports_progress(tmp_path):
     archive_bytes = b"x" * 512
     progress_calls: list[tuple[int, int]] = []
+    get = mock.Mock(return_value=FakeResponse(archive_bytes))
+    session = mock.Mock()
+    session.trust_env = True
+    session.get = get
     with _patch_default_dir(tmp_path), mock.patch(
-        "src.infrastructure.utils.vlc_bootstrap.requests.get",
-        return_value=FakeResponse(archive_bytes),
+        "src.infrastructure.utils.vlc_bootstrap.requests.Session",
+        return_value=session,
     ), mock.patch(
         "src.infrastructure.utils.vlc_bootstrap.py7zr.SevenZipFile",
         FakeSevenZipFile,
@@ -219,9 +227,13 @@ def test_install_portable_reports_progress(tmp_path):
 
 
 def test_install_portable_raises_on_download_failure(tmp_path):
+    get = mock.Mock(side_effect=requests.exceptions.ConnectionError("boom"))
+    session = mock.Mock()
+    session.trust_env = True
+    session.get = get
     with _patch_default_dir(tmp_path), mock.patch(
-        "src.infrastructure.utils.vlc_bootstrap.requests.get",
-        side_effect=requests.exceptions.ConnectionError("boom"),
+        "src.infrastructure.utils.vlc_bootstrap.requests.Session",
+        return_value=session,
     ), pytest.raises(VlcBootstrapError):
         install_vlc_portable()
 
@@ -240,9 +252,13 @@ def test_install_portable_raises_on_extract_failure(tmp_path):
         def extract(self, path, targets=None):
             raise ValueError("archivo 7z corrupto")
 
+    get = mock.Mock(return_value=FakeResponse(b"7z-fake-archive-bytes"))
+    session = mock.Mock()
+    session.trust_env = True
+    session.get = get
     with _patch_default_dir(tmp_path), mock.patch(
-        "src.infrastructure.utils.vlc_bootstrap.requests.get",
-        return_value=FakeResponse(b"7z-fake-archive-bytes"),
+        "src.infrastructure.utils.vlc_bootstrap.requests.Session",
+        return_value=session,
     ), mock.patch(
         "src.infrastructure.utils.vlc_bootstrap.py7zr.SevenZipFile",
         BrokenSevenZip,
@@ -264,9 +280,13 @@ def test_install_portable_raises_when_libvlc_missing_in_archive(tmp_path):
         def extract(self, path, targets=None):
             pass  # el .7z descargado no contenía libvlc.dll
 
+    get = mock.Mock(return_value=FakeResponse(b"7z-fake-archive-bytes"))
+    session = mock.Mock()
+    session.trust_env = True
+    session.get = get
     with _patch_default_dir(tmp_path), mock.patch(
-        "src.infrastructure.utils.vlc_bootstrap.requests.get",
-        return_value=FakeResponse(b"7z-fake-archive-bytes"),
+        "src.infrastructure.utils.vlc_bootstrap.requests.Session",
+        return_value=session,
     ), mock.patch(
         "src.infrastructure.utils.vlc_bootstrap.py7zr.SevenZipFile",
         SevenZipWithoutLibvlc,
@@ -278,12 +298,16 @@ def test_install_portable_cleans_temporary_directory(tmp_path):
     temp_root = tmp_path / "temp"
     temp_root.mkdir()
     dest = tmp_path / "app"
+    get = mock.Mock(return_value=FakeResponse(b"7z-fake-archive-bytes"))
+    session = mock.Mock()
+    session.trust_env = True
+    session.get = get
     with mock.patch(
         "src.infrastructure.utils.vlc_bootstrap.tempfile.mkdtemp",
         return_value=str(temp_root),
     ), _patch_default_dir(tmp_path), mock.patch(
-        "src.infrastructure.utils.vlc_bootstrap.requests.get",
-        return_value=FakeResponse(b"7z-fake-archive-bytes"),
+        "src.infrastructure.utils.vlc_bootstrap.requests.Session",
+        return_value=session,
     ), mock.patch(
         "src.infrastructure.utils.vlc_bootstrap.py7zr.SevenZipFile",
         FakeSevenZipFile,

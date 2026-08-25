@@ -20,8 +20,11 @@ from src.infrastructure.utils.mpv_dll_bootstrap import (
 _logger = logging.getLogger(__name__)
 
 
-def _download_mpv_dialog(parent=None) -> bool:
-    """Muestra la barra de progreso y descarga libmpv-2.dll. True si quedó lista."""
+def _download_mpv_dialog(parent=None) -> str | None:
+    """Muestra la barra de progreso y descarga libmpv-2.dll.
+
+    Devuelve ``None`` si quedó lista, o un mensaje de error si falló/canceló.
+    """
     bin_dir = default_bin_dir()
     _logger.info("MPV: libmpv-2.dll no encontrada. Descargando motor mpv...")
     dialog = QProgressDialog("Descargando motor mpv...", "Cancelar", 0, 100, parent)
@@ -37,19 +40,18 @@ def _download_mpv_dialog(parent=None) -> bool:
             dialog.setValue(min(100, int(downloaded * 100 / total)))
         QApplication.processEvents()
 
-    failed = False
+    error_msg = None
     try:
         ensure_libmpv_dll(bin_dir, progress=_on_progress)
     except Exception as e:
         _logger.error("MPV: fallo al descargar libmpv-2.dll: %s", e)
-        failed = True
+        error_msg = str(e)
     finally:
         dialog.close()
 
-    if dialog.wasCanceled() or failed:
-        _logger.warning("MPV: motor mpv no disponible.")
-        return False
-    return True
+    if dialog.wasCanceled():
+        return "Descarga cancelada."
+    return error_msg
 
 
 def ensure_mpv_available(parent=None) -> bool:
@@ -62,11 +64,13 @@ def ensure_mpv_available(parent=None) -> bool:
     if is_libmpv_available(default_bin_dir()):
         return True
 
-    if not _download_mpv_dialog(parent):
+    error = _download_mpv_dialog(parent)
+    if error:
         QMessageBox.warning(
             parent,
             "Motor mpv no disponible",
-            "No se pudo descargar el motor mpv (libmpv-2.dll). "
+            "No se pudo descargar el motor mpv (libmpv-2.dll).\n\n"
+            f"Detalle: {error}\n\n"
             "Podrás reproducir con VLC si está instalado.",
         )
         return False
