@@ -1,37 +1,75 @@
+import logging
 import os
 import sys
-import logging
 import threading
 from pathlib import Path
+from typing import Any, ClassVar
+
 
 # --- CONFIGURACIÓN DE LIBMPV (DEBE IR ANTES DE IMPORT MPV) ---
-if getattr(sys, 'frozen', False):
-    # PyInstaller bundle: bin/ está en _internal/
-    bin_path = Path(sys._MEIPASS) / "bin"
-else:
-    bin_path = Path(__file__).parent.parent.parent.parent / "bin"
-if bin_path.exists():
-    abs_bin_path = str(bin_path.absolute())
-    if sys.version_info >= (3, 8):
+# La DLL ya NO viaja dentro del bundle: la app la descarga en runtime junto
+# al exe (SCRIPT_DIR/bin) antes de importar este módulo. Se conserva
+# _MEIPASS/bin solo por compatibilidad con bundles antiguos que sí la traían.
+def _candidate_bin_dirs() -> list[Path]:
+    """Directorios candidatos para libmpv-2.dll, en orden de prioridad."""
+    if getattr(sys, 'frozen', False):
+        return [
+            Path(getattr(sys, "_MEIPASS", "")) / "bin",
+            Path(sys.executable).parent / "bin",
+        ]
+    return [Path(__file__).parent.parent.parent.parent / "bin"]
+
+
+def _configure_dll_paths() -> None:
+    """Añade a PATH y a los DLL directories de Windows toda ruta con libmpv-2.dll."""
+    found = False
+    for bin_path in _candidate_bin_dirs():
+        if not (bin_path / "libmpv-2.dll").exists():
+            continue
+        found = True
+        abs_bin_path = str(bin_path.absolute())
         try:
             os.add_dll_directory(abs_bin_path)
         except Exception as e:
             logging.error(f"MPV: Error al añadir directorio de DLLs: {e}")
 
-    # También añadir a PATH para redundancia y compatibilidad con ctypes interno de mpv.py
-    if abs_bin_path not in os.environ["PATH"]:
-        os.environ["PATH"] = abs_bin_path + os.pathsep + os.environ["PATH"]
-    logging.debug(f"MPV: DLL path configurado: {abs_bin_path}")
+        # También añadir a PATH para redundancia y compatibilidad con ctypes interno de mpv.py
+        if abs_bin_path not in os.environ["PATH"]:
+            os.environ["PATH"] = abs_bin_path + os.pathsep + os.environ["PATH"]
+        logging.debug(f"MPV: DLL path configurado: {abs_bin_path}")
+    if not found:
+        logging.warning("MPV: libmpv-2.dll no encontrada en ninguna ruta de búsqueda.")
+
+
+_configure_dll_paths()
 # -----------------------------------------------------------
 
-import mpv  # noqa: E402
-from src.domain.ports.i_player import IPlayer  # noqa: E402
+from src.domain.ports.i_player import IPlayer
+
+
+def _mpv_proxy_decision(proxy_config):
+    """Clasifica cómo maneja mpv/FFmpeg el proxy configurado.
+
+    Devuelve:
+      'disabled'          - proxy no habilitado o sin servidor
+      'socks_unsupported' - SOCKS/Tor: FFmpeg no soporta SOCKS
+      'http_via_env'      - HTTP: se aplica vía variables de entorno (http_proxy)
+    """
+    if not proxy_config or not proxy_config.get('enabled'):
+        return 'disabled'
+    p_type = proxy_config.get('type', 'http').lower()
+    if not proxy_config.get('server'):
+        return 'disabled'
+    if p_type == 'tor' or 'socks' in p_type:
+        return 'socks_unsupported'
+    return 'http_via_env'
+
 
 class MpvPlayerAdapter(IPlayer):
     """Adaptador de infraestructura que utiliza la librería mpv para la reproducción."""
 
     # Valores por defecto para la configuración de mpv
-    DEFAULT_CONFIG = {
+    DEFAULT_CONFIG: ClassVar[dict] = {
         "network_caching": 5000,
         "hw_acceleration": False,
         "cache": True,
@@ -42,7 +80,7 @@ class MpvPlayerAdapter(IPlayer):
         "file_logging": True
     }
 
-    def __init__(self, mpv_config: dict = None, proxy_config: dict = None):
+    def __init__(self, mpv_config: dict | None = None, proxy_config: dict | None = None):
         """
         Inicializa el adaptador con una configuración personalizada.
         """
@@ -51,9 +89,9 @@ class MpvPlayerAdapter(IPlayer):
             self._config.update(mpv_config)
 
         self._proxy_config = proxy_config
-        self._player = None
-        self._window_id = None
-        self._current_url = None
+        self._player: Any = None
+        self._window_id: int | None = None
+        self._current_url: str | None = None
         self._reconnecting = False # Flag para evitar bucles de reconexión
 
         # mpv ya está importado y la DLL cargada gracias al setup previo en este módulo
@@ -64,6 +102,7 @@ class MpvPlayerAdapter(IPlayer):
         self.release()
 
         try:
+            import mpv  # lazy: carga libmpv-2.dll solo al instanciar el reproductor
             log_handler = None
             log_level = self._config.get("log_level", "info")
 
@@ -114,15 +153,15 @@ class MpvPlayerAdapter(IPlayer):
             }
 
             # Configuración de Proxy
-            if self._proxy_config and self._proxy_config.get('enabled'):
-                p_type = self._proxy_config.get('type', 'http').lower()
-                server = self._proxy_config.get('server', '')
-
-                if server:
-                    logging.info(f"MPV: Configurando acceso por red via proxy {p_type} (vía entorno)")
-                    # No pasamos 'proxy' como opción directa ya que libmpv puede fallar con esa opción
-                    # en algunas versiones. Al haber configurado os.environ['ALL_PROXY'],
-                    # FFmpeg (backend de mpv) lo detectará automáticamente.
+            decision = _mpv_proxy_decision(self._proxy_config)
+            if decision == 'socks_unsupported':
+                logging.warning(
+                    "MPV: el proxy SOCKS (Tor) no se puede aplicar: FFmpeg no "
+                    "soporta proxies SOCKS. El tráfico de vídeo NO pasará por Tor. "
+                    "Usa el motor VLC para reproducir a través de Tor."
+                )
+            elif decision == 'http_via_env':
+                logging.info("MPV: proxy HTTP aplicado vía variables de entorno (http_proxy).")
 
             # Aceleración por hardware
             if self._config.get("hw_acceleration"):

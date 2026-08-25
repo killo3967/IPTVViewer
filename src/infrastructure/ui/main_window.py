@@ -1,32 +1,51 @@
 import logging
-import requests
-from PyQt6.QtWidgets import (
-    QMainWindow, QTableWidget, QTableWidgetItem, QMessageBox,
-    QSplitter, QWidget, QVBoxLayout, QHeaderView,
-    QMenuBar, QFileDialog, QInputDialog, QMenu,
-    QDialog, QFormLayout, QLineEdit, QDialogButtonBox,
-    QApplication, QLabel,
-)
-from PyQt6.QtGui import QColor, QPixmap, QAction, QActionGroup, QIcon, QKeySequence, QShortcut, QDesktopServices
-from PyQt6.QtCore import Qt, QTimer, QSize, QEvent, QUrl
 
-from src.application.services.playlist_loader import PlaylistLoader
-from src.application.services.playback_manager import PlaybackManager
+import requests
+from PyQt6.QtCore import QEvent, QSize, Qt, QTimer, QUrl
+from PyQt6.QtGui import (
+    QActionGroup,
+    QDesktopServices,
+    QIcon,
+    QKeySequence,
+    QPixmap,
+    QShortcut,
+)
+from PyQt6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QFormLayout,
+    QHeaderView,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
 from src.application.services.epg_manager import EPGManager
+from src.application.services.playback_manager import PlaybackManager
+from src.application.services.playlist_loader import PlaylistLoader
 from src.application.services.view_mode_controller import (
     ViewMode,
     ViewModeController,
-    resolve_zap_index,
-    encode_splitter_state,
     decode_splitter_state,
+    encode_splitter_state,
     geometry_to_str,
+    resolve_zap_index,
     str_to_geometry,
 )
-from src.infrastructure.ui.components.pip_window import PIPWindow
-from src.infrastructure.adapters.qt_logo_loader_adapter import QtLogoLoaderAdapter
-from src.infrastructure.ui.components.epg_grid import EPGGridDialog
 from src.domain.entities.channel import Channel
 from src.domain.entities.playlist import Playlist
+from src.infrastructure.adapters.qt_logo_loader_adapter import QtLogoLoaderAdapter
+from src.infrastructure.ui.components.epg_grid import EPGGridDialog
+from src.infrastructure.ui.components.pip_window import PIPWindow
 
 APP_VERSION = "1.0.0"
 
@@ -64,7 +83,7 @@ def _version_tuple(v):
 class SourceEditorDialog(QDialog):
     """Diálogo para añadir o editar una fuente M3U con nombre."""
 
-    def __init__(self, parent=None, source: dict = None):
+    def __init__(self, parent=None, source: dict | None = None):
         super().__init__(parent)
         self.setWindowTitle("Editar lista" if source else "Añadir lista")
         self.setMinimumWidth(450)
@@ -121,24 +140,25 @@ class IPTVMainWindow(QMainWindow):
 
         # Estado de sesión (no persistido)
         self._fullscreen_active = False
-        self._cursor_timer = None
-        self._fullscreen_watchers = []
-        self._splitter_snapshot = None
-        self._splitter_save_timer = None
-        self._pip_window = None
+        self._cursor_timer: QTimer | None = None
+        self._fullscreen_watchers: list[QWidget] = []
+        self._splitter_snapshot: bytes | None = None
+        self._splitter_save_timer: QTimer | None = None
+        self._pip_window: PIPWindow | None = None
         self._pip_open = False
-        self._pip_geometry_save_timer = None
-        self._overlay_timer = None
-        self._pre_fullscreen_mode = None
+        self._pip_geometry_save_timer: QTimer | None = None
+        self._overlay_timer: QTimer | None = None
+        self._pre_fullscreen_mode: ViewMode | None = None
 
         # UI Initialization
         self.setWindowTitle("IPTV Viewer – Arquitectura Hexagonal")
         self.resize(1200, 650)
         
         # Cargar icono de la aplicación
-        import os, sys
+        import os
+        import sys
         if getattr(sys, 'frozen', False):
-            base = sys._MEIPASS
+            base = getattr(sys, "_MEIPASS", "")
         else:
             base = os.path.join(os.path.dirname(__file__), '../../..')
         icon_path = os.path.join(base, 'resources', 'logo.png')
@@ -274,11 +294,13 @@ class IPTVMainWindow(QMainWindow):
         """
         if self.table.isHidden():
             return
-        if self._splitter_save_timer is None:
-            self._splitter_save_timer = QTimer(self)
-            self._splitter_save_timer.setSingleShot(True)
-            self._splitter_save_timer.timeout.connect(self._flush_splitter_state)
-        self._splitter_save_timer.start(300)
+        timer = self._splitter_save_timer
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self._flush_splitter_state)
+            self._splitter_save_timer = timer
+        timer.start(300)
 
     def _flush_splitter_state(self):
         self._config['splitter_state'] = encode_splitter_state(
@@ -293,8 +315,9 @@ class IPTVMainWindow(QMainWindow):
         Se ejecuta antes de ocultar la tabla: este es el estado autoritativo
         guardado antes de que el layout colapsado pueda sobreescribirlo.
         """
-        self._splitter_snapshot = bytes(self.splitter.saveState())
-        self._config['splitter_state'] = encode_splitter_state(self._splitter_snapshot)
+        snapshot = bytes(self.splitter.saveState())
+        self._splitter_snapshot = snapshot
+        self._config['splitter_state'] = encode_splitter_state(snapshot)
         if self._save_callback:
             self._save_callback(self._config)
 
@@ -338,10 +361,11 @@ class IPTVMainWindow(QMainWindow):
             self._open_pip()
 
     def _open_pip(self):
-        if self._pip_window is None:
-            self._pip_window = PIPWindow(self)
-            self._pip_window.geometry_changed.connect(self._arm_pip_geometry_save)
         pip = self._pip_window
+        if pip is None:
+            pip = PIPWindow(self)
+            pip.geometry_changed.connect(self._arm_pip_geometry_save)
+            self._pip_window = pip
         pip.set_video_widget(self.video_widget)
         self._apply_pip_geometry(pip)
         pip.show()
@@ -350,6 +374,8 @@ class IPTVMainWindow(QMainWindow):
 
     def _close_pip(self):
         pip = self._pip_window
+        if pip is None:
+            return
         # Cancelar el guardado diferido: los cambios de geometría durante el
         # cierre no deben persistirse (WU 4.3 / REFACTOR).
         if self._pip_geometry_save_timer is not None:
@@ -367,11 +393,13 @@ class IPTVMainWindow(QMainWindow):
         Se dispara desde la señal geometry_changed de PIPWindow (move/resize
         del cuerpo o del grip); el debounce evita escrituras a ráfagas.
         """
-        if self._pip_geometry_save_timer is None:
-            self._pip_geometry_save_timer = QTimer(self)
-            self._pip_geometry_save_timer.setSingleShot(True)
-            self._pip_geometry_save_timer.timeout.connect(self._flush_pip_geometry)
-        self._pip_geometry_save_timer.start(300)
+        timer = self._pip_geometry_save_timer
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self._flush_pip_geometry)
+            self._pip_geometry_save_timer = timer
+        timer.start(300)
 
     def _flush_pip_geometry(self):
         """Persiste la geometría actual del PIP vía save_callback (REQ-8)."""
@@ -421,11 +449,13 @@ class IPTVMainWindow(QMainWindow):
         self._channel_overlay.move(max(x, 0), max(y, 0))
         self._channel_overlay.show()
         self._channel_overlay.raise_()
-        if self._overlay_timer is None:
-            self._overlay_timer = QTimer(self)
-            self._overlay_timer.setSingleShot(True)
-            self._overlay_timer.timeout.connect(self._channel_overlay.hide)
-        self._overlay_timer.start(2000)
+        timer = self._overlay_timer
+        if timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.timeout.connect(self._channel_overlay.hide)
+            self._overlay_timer = timer
+        timer.start(2000)
 
     def _toggle_fullscreen(self):
         """Alterna el eje de pantalla completa (REQ-4). Estado de sesión."""
@@ -439,12 +469,15 @@ class IPTVMainWindow(QMainWindow):
         self._pre_fullscreen_mode = self._view_controller.mode
         self._fullscreen_active = True
         self.showFullScreen()
-        self._cursor_timer = QTimer(self)
-        self._cursor_timer.setSingleShot(True)
-        self._cursor_timer.timeout.connect(self._on_cursor_timeout)
-        self._cursor_timer.start(3000)
+        cursor_timer = QTimer(self)
+        cursor_timer.setSingleShot(True)
+        cursor_timer.timeout.connect(self._on_cursor_timeout)
+        cursor_timer.start(3000)
+        self._cursor_timer = cursor_timer
+        central = self.centralWidget()
+        assert central is not None
         self._fullscreen_watchers = [
-            self, self.centralWidget(), self.splitter, self.table, self.video_widget,
+            self, central, self.splitter, self.table, self.video_widget,
         ]
         for w in self._fullscreen_watchers:
             w.installEventFilter(self)
@@ -682,8 +715,6 @@ class IPTVMainWindow(QMainWindow):
             self._fill_table(playlist)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo cargar la lista: {e}")
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"No se pudo cargar la lista: {e}")
 
     def _show_epg_grid(self):
         """Muestra el diálogo de la parrilla EPG."""
@@ -740,9 +771,9 @@ class IPTVMainWindow(QMainWindow):
 
     def _open_engine_options_dialog(self):
         """Abre el diálogo de configuración técnica del motor (VLC y mpv)."""
-        from src.infrastructure.ui.components.engine_config_dialog import EngineConfigDialog
-        from src.infrastructure.adapters.vlc_player_adapter import VlcPlayerAdapter
         from src.infrastructure.adapters.mpv_player_adapter import MpvPlayerAdapter
+        from src.infrastructure.adapters.vlc_player_adapter import VlcPlayerAdapter
+        from src.infrastructure.ui.components.engine_config_dialog import EngineConfigDialog
         
         current_engine = self._config.get('player_engine', 'vlc')
         vlc_cfg = self._config.get('vlc_config', {})
@@ -752,6 +783,10 @@ class IPTVMainWindow(QMainWindow):
         
         if dialog.exec():
             new_engine, new_vlc_cfg, new_mpv_cfg = dialog.get_results()
+
+            if new_engine == 'mpv':
+                from src.infrastructure.ui.mpv_bootstrap_dialog import ensure_mpv_engine
+                new_engine = ensure_mpv_engine(new_engine, self)
             proxy_cfg = self._config.get('proxy_config', {}) # Usar proxy actual
             
             # Persistir cambios en el objeto de config
@@ -802,11 +837,14 @@ class IPTVMainWindow(QMainWindow):
             setup_proxy(new_proxy_cfg)
 
             # Reiniciar el reproductor para aplicar el nuevo proxy (antes no se aplicaba en runtime)
+            from src.infrastructure.adapters.mpv_player_adapter import MpvPlayerAdapter
             from src.infrastructure.adapters.player_factory import build_player_adapter
             from src.infrastructure.adapters.vlc_player_adapter import VlcPlayerAdapter
-            from src.infrastructure.adapters.mpv_player_adapter import MpvPlayerAdapter
 
             engine = self._config.get('player_engine', 'vlc')
+            if engine == 'mpv':
+                from src.infrastructure.ui.mpv_bootstrap_dialog import ensure_mpv_engine
+                engine = ensure_mpv_engine(engine, self)
             new_adapter = build_player_adapter(
                 engine,
                 self._config.get('vlc_config'),

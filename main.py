@@ -1,21 +1,23 @@
-import sys
-import logging
 import configparser
-from pathlib import Path
+import logging
+import sys
 from datetime import datetime
+from pathlib import Path
+
 from PyQt6.QtWidgets import QApplication
+
+from src.application.services.epg_manager import EPGManager
+from src.application.services.playback_manager import PlaybackManager
+from src.application.services.playlist_loader import PlaylistLoader
+from src.application.services.view_mode_controller import ViewMode
+from src.infrastructure.adapters.file_m3u_repository import FileM3URepository
+from src.infrastructure.adapters.qt_logo_loader_adapter import QtLogoLoaderAdapter
 
 # Importaciones de la nueva arquitectura
 from src.infrastructure.adapters.vlc_player_adapter import VlcPlayerAdapter
-from src.infrastructure.adapters.mpv_player_adapter import MpvPlayerAdapter
-from src.infrastructure.adapters.file_m3u_repository import FileM3URepository
 from src.infrastructure.adapters.xmltv_repository import XMLTVRepository
-from src.infrastructure.adapters.qt_logo_loader_adapter import QtLogoLoaderAdapter
-from src.application.services.playlist_loader import PlaylistLoader
-from src.application.services.playback_manager import PlaybackManager
-from src.application.services.epg_manager import EPGManager
-from src.application.services.view_mode_controller import ViewMode
 from src.infrastructure.ui.main_window import IPTVMainWindow
+from src.infrastructure.utils.proxy import setup_proxy
 
 # Configuración básica de rutas
 if getattr(sys, 'frozen', False):
@@ -31,7 +33,7 @@ def setup_logger():
     log_file = LOG_DIR / 'iptv_viewer.log'
     
     # Creamos los handlers manualmente para mayor control
-    handlers = [
+    handlers: list[logging.Handler] = [
         logging.FileHandler(str(log_file), encoding='utf-8', mode='a'),
         logging.StreamHandler(sys.stdout)
     ]
@@ -232,20 +234,25 @@ def save_config(config_data, config_path=None):
         parser.write(f)
     logging.info("Configuración guardada correctamente.")
 
-from src.infrastructure.utils.proxy import setup_proxy
-from src.infrastructure.adapters.player_factory import build_player_adapter
 
 def main():
     # 1. Setup inicial
     setup_logger()
     config = load_config()
     setup_proxy(config.get('proxy_config'))
-    
+
     # 2. Inicializar Qt
     app = QApplication(sys.argv)
-    
-    # 3. Instanciar Adaptador según configuración (Normalizando config de proxy)
+
+    # 3. Asegurar mpv al arrancar (descarga si falta, independiente del motor activo)
+    from src.infrastructure.ui.mpv_bootstrap_dialog import ensure_mpv_available
+    ensure_mpv_available()
     engine = config.get('player_engine', 'vlc')
+
+    # 3b. Importar adaptadores (lazy: mpv_player_adapter solo tras asegurar la DLL)
+    from src.infrastructure.adapters.mpv_player_adapter import MpvPlayerAdapter
+    from src.infrastructure.adapters.player_factory import build_player_adapter
+
     player_adapter = build_player_adapter(
         engine,
         config.get('vlc_config'),

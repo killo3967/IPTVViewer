@@ -10,10 +10,20 @@ mpv>=1.0
 
 # HTTP / descargas
 requests>=2.28
+# py7zr: extraer libmpv-2.dll del .7z (release 20260814 de mpv-winbuild-cmake)
+# en runtime cuando falta — el exe ya no empaqueta la DLL del motor mpv
+py7zr>=1.1
 
 # Proxy Tor
 torpy>=1.0
+# PySocks: requerido por requests/urllib3 para consumir proxies SOCKS5
+# (el proxy SOCKS5 de Tor se usa via HTTP_PROXY=socks5h://...) - BUG-01
+PySocks>=1.7.1
 
 # Tests
 pytest>=8.0
 pytest-qt>=4.2
+
+# Dev tools (lint + type checking)
+ruff>=0.16
+mypy>=2.0
