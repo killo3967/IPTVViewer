@@ -1,9 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
-import os
-_ver_parts = (os.environ.get('IPTVVIEWER_VERSION', '0.0.0') + '.0.0.0').split('.')[:4]
-APP_VERSION = '.'.join(_ver_parts)
-
 datas = [('resources', 'resources')]
 binaries = []
 hiddenimports = ['torpy', 'torpy.client', 'torpy.cli.socks', 'torpy.socks', 'torpy.circuit', 'torpy.cells', 'torpy.consesus', 'torpy.guard', 'torpy.cell_socket', 'mpv', 'PyQt6.QtNetwork', 'socks']  # 'socks' (PySocks) se importa dinamicamente desde urllib3 - BUG-01
@@ -33,7 +29,6 @@ exe = EXE(
     a.datas,
     exclude_binaries=False,
     name='IPTVViewer',
-    version=APP_VERSION,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
