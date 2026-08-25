@@ -1,18 +1,27 @@
 import logging
-import requests
 import threading
+
+import requests
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QCheckBox, QSpinBox, QLineEdit, QPushButton,
-    QGroupBox, QComboBox, QMessageBox,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
+    QVBoxLayout,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 
 
 def _fetch_tor_info(request_get, proxy_url: str):
     proxies = {'http': proxy_url, 'https': proxy_url}
     try:
-        resp = request_get('http://ip-api.com/json', proxies=proxies, timeout=5)
+        resp = request_get('http://ip-api.com/json', proxies=proxies, timeout=20)
         data = resp.json()
     except (requests.RequestException, ValueError):
         return None
@@ -21,6 +30,31 @@ def _fetch_tor_info(request_get, proxy_url: str):
         return None
 
     return data.get('query'), data.get('country')
+
+
+def _fetch_tor_verification(request_get, proxy_url: str):
+    """Consulta check.torproject.org para confirmar que la salida pasa por Tor.
+
+    Devuelve (is_tor, ip) si la respuesta es válida, o None ante fallo de red
+    o respuesta inesperada. A diferencia de ip-api/ipify (que solo dan la IP),
+    este endpoint confirma si la IP es un nodo de salida Tor conocido.
+    """
+    proxies = {'http': proxy_url, 'https': proxy_url}
+    try:
+        resp = request_get('https://check.torproject.org/api/ip', proxies=proxies, timeout=10)
+        data = resp.json()
+    except (requests.RequestException, ValueError, AttributeError):
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
+    is_tor = data.get('IsTor')
+    ip = data.get('IP')
+    if not isinstance(is_tor, bool) or not ip:
+        return None
+
+    return is_tor, ip
 
 
 def _is_local_port_open(socket_factory, host: str, port: int) -> bool:
@@ -50,6 +84,7 @@ def _fetch_proxy_test_ip(request_get, proxies: dict, timeout: int) -> str:
 class ProxyConfigDialog(QDialog):
     """Diálogo independiente para la configuración del Proxy."""
     tor_info_received = pyqtSignal(str, str) # ip, country
+    tor_verification_received = pyqtSignal(bool) # is_tor (check.torproject.org)
 
     def __init__(self, proxy_config: dict, parent=None):
         super().__init__(parent)
@@ -144,10 +179,12 @@ class ProxyConfigDialog(QDialog):
         self.lbl_tor_status = QLabel("Desconectado")
         self.lbl_tor_ip = QLabel("-")
         self.lbl_tor_country = QLabel("-")
+        self.lbl_tor_verified = QLabel("-")
 
         info_form.addRow("Estado:", self.lbl_tor_status)
         info_form.addRow("IP externa:", self.lbl_tor_ip)
         info_form.addRow("País:", self.lbl_tor_country)
+        info_form.addRow("Confirmación Tor:", self.lbl_tor_verified)
 
         self.btn_new_identity = QPushButton("Nueva Identidad / Cambiar Circuito")
         self.btn_new_identity.clicked.connect(self._on_new_identity)
@@ -165,6 +202,7 @@ class ProxyConfigDialog(QDialog):
 
         # Conectar señal de info hilos-segura
         self.tor_info_received.connect(self._on_tor_info_received)
+        self.tor_verification_received.connect(self._on_tor_verification_received)
 
         # Disparar actualización inicial de UI AHORA que todo existe
         self._on_type_changed()
@@ -207,6 +245,7 @@ class ProxyConfigDialog(QDialog):
             self.lbl_tor_status.setText("<span style='color: #ff5555;'>Desconectado / Iniciando</span>")
             self.lbl_tor_ip.setText("-")
             self.lbl_tor_country.setText("-")
+            self.lbl_tor_verified.setText("-")
             return
 
         self.lbl_tor_status.setText("<span style='color: #55ff55;'>Conectado (Tor)</span>")
@@ -218,6 +257,10 @@ class ProxyConfigDialog(QDialog):
             if info is not None:
                 ip, country = info
                 self.tor_info_received.emit(ip, country)
+            verification = _fetch_tor_verification(requests.get, proxy_url)
+            if verification is not None:
+                is_tor, _ = verification
+                self.tor_verification_received.emit(is_tor)
 
         threading.Thread(target=fetch, daemon=True).start()
 
@@ -243,16 +286,27 @@ class ProxyConfigDialog(QDialog):
         self.lbl_tor_ip.setText(f"<b>{ip}</b>")
         self.lbl_tor_country.setText(f"<b>{country}</b>")
 
+    def _on_tor_verification_received(self, is_tor: bool):
+        """Actualiza el estado de confirmación de Tor en la UI."""
+        if is_tor:
+            self.lbl_tor_verified.setText(
+                "<span style='color: #55ff55;'>Sí — salida confirmada por Tor Project</span>"
+            )
+        else:
+            self.lbl_tor_verified.setText(
+                "<span style='color: #ff5555;'>No — la salida no pasa por Tor</span>"
+            )
+
 
     def _on_test_connection(self):
         """Prueba una petición simple usando el proxy configurado (aplicando cambios primero)."""
-        from src.infrastructure.utils.proxy import setup_proxy, TorpyProxyManager
+        from src.infrastructure.utils.proxy import TorpyProxyManager, setup_proxy
 
         # 1. Obtener config actual de la UI y APLICARLA inmediatamente
         current_cfg = self.get_results()
         setup_proxy(current_cfg)
 
-        ptype = current_cfg.get('type')
+        ptype = current_cfg.get('type', 'http')
 
         # 2. Preparar URL de test según el tipo
         if ptype == "tor":
@@ -262,11 +316,11 @@ class ProxyConfigDialog(QDialog):
             pwd = ""
         else:
             test_ptype = ptype
-            server = current_cfg.get('server')
-            user = current_cfg.get('username')
-            pwd = current_cfg.get('password')
+            server = current_cfg.get('server', '')
+            user = current_cfg.get('username', '')
+            pwd = current_cfg.get('password', '')
 
-        port = current_cfg.get('port')
+        port = current_cfg.get('port', 8080)
         auth = f"{user}:{pwd}@" if user and pwd else ""
         proxy_url = f"{test_ptype}://{auth}{server}:{port}"
 
@@ -278,9 +332,10 @@ class ProxyConfigDialog(QDialog):
 
             # Si es Tor, esperar a que el puerto esté FÍSICAMENTE abierto y listo
             if ptype == "tor":
-                from PyQt6.QtCore import QCoreApplication
                 import socket
                 import time
+
+                from PyQt6.QtCore import QCoreApplication
                 manager = TorpyProxyManager.get_instance()
                 wait_start = time.time()
                 port_ready = False

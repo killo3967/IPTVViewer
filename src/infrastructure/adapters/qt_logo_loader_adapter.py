@@ -1,9 +1,10 @@
-import os
 import hashlib
 from pathlib import Path
-from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
+
+from PyQt6.QtCore import QObject, Qt, QUrl, pyqtSignal
 from PyQt6.QtGui import QPixmap
-from PyQt6.QtCore import QUrl, Qt, pyqtSignal, QObject
+from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
+
 
 class QtLogoLoaderAdapter(QObject):
     """Adaptador de infraestructura para la carga asíncrona de logos con caché en disco."""
@@ -13,7 +14,7 @@ class QtLogoLoaderAdapter(QObject):
     def __init__(self, cache_dir: str = "cache/logos"):
         super().__init__()
         self._nam = QNetworkAccessManager()
-        self._memory_cache = {}
+        self._memory_cache: dict[str, QPixmap] = {}
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -47,6 +48,7 @@ class QtLogoLoaderAdapter(QObject):
         request.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader, "IPTVViewer/1.0")
         
         reply = self._nam.get(request)
+        assert reply is not None
         reply.finished.connect(lambda: self._handle_response(reply, url, cache_path))
 
     def _handle_response(self, reply: QNetworkReply, url: str, cache_path: Path):

@@ -1,11 +1,17 @@
+from datetime import datetime, timedelta
+
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QTableWidget, QTableWidgetItem, 
-    QHeaderView, QLabel, QWidget, QHBoxLayout
+    QDialog,
+    QHeaderView,
+    QLabel,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
 )
-from PyQt6.QtCore import Qt, QDateTime
+
 from src.application.services.epg_manager import EPGManager
 from src.domain.entities.playlist import Playlist
-from datetime import datetime, timedelta
+
 
 class EPGGridDialog(QDialog):
     """Diálogo que muestra la parrilla de programación completa."""
@@ -53,7 +59,7 @@ class EPGGridDialog(QDialog):
         
         # Rellenar Datos
         for row, channel in enumerate(self._playlist):
-            programs = self._epg_manager.get_program_schedule(channel.tvg_id, channel.name)
+            programs = self._epg_manager.get_program_schedule(channel.tvg_id or "", channel.name)
             if not programs:
                 continue
                 

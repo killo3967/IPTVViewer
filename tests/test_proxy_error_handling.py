@@ -178,6 +178,23 @@ def test_fetch_tor_info_swallows_request_failures():
     )
 
 
+def test_fetch_tor_info_uses_tor_friendly_timeout():
+    captured = {}
+
+    def fake_get(url, **_kwargs):
+        captured.update(_kwargs)
+        return _DummyJsonResponse(
+            {"status": "success", "query": "203.0.113.7", "country": "Test"}
+        )
+
+    result = proxy_dialog_module._fetch_tor_info(
+        fake_get, "socks5h://127.0.0.1:9050"
+    )
+
+    assert captured.get("timeout") == 20
+    assert result == ("203.0.113.7", "Test")
+
+
 def test_fetch_tor_info_propagates_unexpected_errors():
     def fake_get(*_args, **_kwargs):
         raise TypeError("bad callback")

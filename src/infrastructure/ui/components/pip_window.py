@@ -4,7 +4,7 @@ REQ-6: ventana desacoplada (DETACH), siempre encima, sin marco, arrastrable
 por el cuerpo y redimensionable por el grip inferior-derecho. Los eventos de
 teclado se reenvían a la ventana principal (key forwarding).
 """
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import QPoint, QRect, Qt, pyqtSignal
 from PyQt6.QtWidgets import QApplication, QWidget
 
 
@@ -14,11 +14,11 @@ class ResizeGrip(QWidget):
     MIN_WIDTH = 160
     MIN_HEIGHT = 90
 
-    def __init__(self, parent: QWidget = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setFixedSize(16, 16)
-        self._drag_start_global = None
-        self._start_geometry = None
+        self._drag_start_global: QPoint | None = None
+        self._start_geometry: QRect | None = None
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -60,9 +60,9 @@ class PIPWindow(QWidget):
             | Qt.WindowType.WindowStaysOnTopHint,
         )
         self._key_forward_target = key_forward_target
-        self._drag_start_global = None
-        self._drag_start_pos = None
-        self._video_widget = None
+        self._drag_start_global: QPoint | None = None
+        self._drag_start_pos: QPoint | None = None
+        self._video_widget: QWidget | None = None
         self._resize_grip = ResizeGrip(self)
         self.setMinimumSize(ResizeGrip.MIN_WIDTH, ResizeGrip.MIN_HEIGHT)
 

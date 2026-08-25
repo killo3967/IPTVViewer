@@ -67,10 +67,15 @@ Si el problema persiste, prueba a cambiar de motor (Configuración → Motor act
 
 ### Reproducción con proxy Tor
 
-1. `TorpyProxyManager` inicia circuito de 3 saltos
-2. Configura `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` en el entorno
-3. VLC recibe opciones `--socks` o `--http-proxy` directamente
-4. MPV hereda variables de entorno (FFmpeg las detecta)
+1. `TorpyProxyManager` inicia circuito de 3 saltos y expone SOCKS5 en `127.0.0.1:9050`
+2. Configura `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY` en el entorno (para `requests`, M3U, EPG y logos)
+3. **VLC** recibe `--socks=127.0.0.1:9050` → el tráfico HTTP/HLS pasa por Tor
+4. **MPV** no puede usar el proxy SOCKS: FFmpeg (su backend) no soporta SOCKS, así que el vídeo sale **directo**, sin Tor (la app lo avisa en el log)
+
+> **Limitaciones del proxy Tor en la reproducción:**
+> - Solo el tráfico HTTP/HTTPS/HLS se enruta por Tor. Los streams UDP/RTP van directos.
+> - MPV no soporta SOCKS (limitación de FFmpeg 7.x). Para reproducir a través de Tor, usa VLC.
+> - Si activas Tor con la app ya abierta, el reproductor se reinicia para aplicar el proxy.
 
 ---
 

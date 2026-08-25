@@ -1,0 +1,45 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = [
+    ".venv",
+    "build",
+    "dist",
+    "pruebas",
+]
+
+[tool.ruff.lint]
+# Ruff 0.16 habilita un set amplio de reglas por defecto.
+# Estas tres reglas reflejan decisiones de diseño deliberadas del proyecto:
+# - BLE001: los adaptadores de red/video capturan `Exception` de forma
+#   intencional (fail-safe de app de escritorio: un stream roto no debe tumbar
+#   la aplicación).
+# - DTZ: la app usa `datetime` naive de forma consistente; el parser XMLTV no
+#   interpreta zona horaria por diseño.
+# - LOG015: la app configura el logger raíz globalmente en main.setup_logger()
+#   y usa logging.<nivel>() como patrón simple en toda la aplicación.
+ignore = ["BLE001", "DTZ", "LOG015"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+no_implicit_optional = true
+exclude = ["pruebas", "build", "dist"]
+
+# Los stubs oficiales de PyQt6 marcan Optional/Any en APIs que no lo son
+# (QMenu, QHeaderView, QTableWidgetItem, QShortcut, QTest...). Estos dos códigos
+# solo aparecen en este proyecto como ruido de esos stubs; la lógica de dominio
+# (que es lo que mypy verifica de forma útil) no los produce.
+disable_error_code = ["union-attr", "call-overload"]
+
+# Módulos externos sin stubs de calidad: sus errores se silencian.
+# `follow_imports = "skip"` rompe el daemon de mypy (KeyError: 'PyQt6'
+# en find_reachable_changed_modules); "silent" parsea el módulo, suprime
+# sus errores y lo registra en el grafo, evitando el crash.
+[[tool.mypy.overrides]]
+module = ["PyQt6", "PyQt6.*", "vlc", "mpv", "torpy", "torpy.*", "requests", "requests.*"]
+follow_imports = "silent"
+ignore_missing_imports = true

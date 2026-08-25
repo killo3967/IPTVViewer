@@ -1,12 +1,13 @@
-from src.domain.ports.i_player import IPlayer
 from src.domain.entities.channel import Channel
+from src.domain.ports.i_player import IPlayer
+
 
 class PlaybackManager:
     """Servicio de aplicación para controlar la reproducción de canales."""
     
     def __init__(self, player: IPlayer):
         self._player = player
-        self._current_channel = None
+        self._current_channel: Channel | None = None
 
     def play_channel(self, channel: Channel):
         """Inicia la reproducción de un canal específico."""
@@ -43,5 +44,5 @@ class PlaybackManager:
             self.play_channel(self._current_channel)
 
     @property
-    def current_channel(self) -> Channel:
+    def current_channel(self) -> Channel | None:
         return self._current_channel

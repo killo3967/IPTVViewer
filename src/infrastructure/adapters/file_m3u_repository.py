@@ -1,22 +1,22 @@
-import re
-import requests
 import logging
-import tempfile
-import os
+import re
 from pathlib import Path
-from typing import List
-from src.domain.ports.i_playlist_repo import IPlaylistRepository
+
+import requests
+
 from src.domain.entities.channel import Channel
+from src.domain.ports.i_playlist_repo import IPlaylistRepository
+
 
 class FileM3URepository(IPlaylistRepository):
     """Adaptador que gestiona la persistencia y carga de canales desde archivos M3U."""
     
-    def get_channels(self, source: str) -> List[Channel]:
+    def get_channels(self, source: str) -> list[Channel]:
         """Carga los canales desde una URL o un archivo local."""
         m3u_content = self._get_content(source)
         return self._parse_m3u(m3u_content)
 
-    def _get_content(self, source: str) -> List[str]:
+    def _get_content(self, source: str) -> list[str]:
         """Obtiene las líneas del contenido M3U."""
         if source.startswith('http'):
             # Descarga remota
@@ -37,7 +37,7 @@ class FileM3URepository(IPlaylistRepository):
             with open(path, 'r', encoding='utf-8') as f:
                 return f.readlines()
 
-    def _parse_m3u(self, lines: List[str]) -> List[Channel]:
+    def _parse_m3u(self, lines: list[str]) -> list[Channel]:
         """Lógica de parseo de M3U extraída del código original."""
         channels = []
         i = 0

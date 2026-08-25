@@ -2,6 +2,7 @@ import builtins
 import importlib
 import sys
 import types
+from typing import Any
 
 import pytest
 
@@ -19,7 +20,7 @@ class _FakeMpvInstance:
 
 def _import_mpv_adapter(monkeypatch):
     fake_mpv = types.ModuleType("mpv")
-    captured = {}
+    captured: dict[str, Any] = {}
 
     def build_player(**kwargs):
         player = _FakeMpvInstance(**kwargs)
@@ -27,7 +28,7 @@ def _import_mpv_adapter(monkeypatch):
         captured["kwargs"] = kwargs
         return player
 
-    fake_mpv.MPV = build_player
+    fake_mpv.MPV = build_player  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "mpv", fake_mpv)
     sys.modules.pop("src.infrastructure.adapters.mpv_player_adapter", None)
     module = importlib.import_module("src.infrastructure.adapters.mpv_player_adapter")

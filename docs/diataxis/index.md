@@ -18,7 +18,7 @@
 
 | | Detalle |
 |---|---|
-| Auditoría base | 2026-07-04 · Última verificación 2026-08-20 |
+| Auditoría base | 2026-07-04 · Última verificación 2026-08-24 |
 | Docs canónicos | `docs/00-04_*.md` (sin modificar) |
 | Docs derivados | `docs/diataxis/` (este directorio) |
 | Migración in-place | No solicitada — solo lectura de docs originales |

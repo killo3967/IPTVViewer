@@ -6,11 +6,11 @@ el controlador de estado, el índice de zapping y los helpers de geometría.
 from src.application.services.view_mode_controller import (
     ViewMode,
     ViewModeController,
-    resolve_zap_index,
-    geometry_to_str,
-    str_to_geometry,
-    encode_splitter_state,
     decode_splitter_state,
+    encode_splitter_state,
+    geometry_to_str,
+    resolve_zap_index,
+    str_to_geometry,
 )
 from src.domain.entities.channel import Channel
 

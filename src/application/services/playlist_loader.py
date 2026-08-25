@@ -1,5 +1,6 @@
-from src.domain.ports.i_playlist_repo import IPlaylistRepository
 from src.domain.entities.playlist import Playlist
+from src.domain.ports.i_playlist_repo import IPlaylistRepository
+
 
 class PlaylistLoader:
     """Servicio de aplicación para gestionar la carga y filtrado de listas."""

@@ -1,6 +1,6 @@
 # Dependencias
 
-> **Respuesta corta**: 7 dependencias directas en `requirements.txt`. Los esenciales son PyQt6, python-vlc, mpv, torpy y requests. El resto son de desarrollo (pytest).
+> **Respuesta corta**: 10 dependencias directas en `requirements.txt`. Los esenciales son PyQt6, python-vlc, mpv, torpy, PySocks y requests. El resto son de desarrollo (pytest, ruff, mypy).
 
 ---
 
@@ -15,8 +15,11 @@
 | `mpv` | `>=1.0` | Binding del motor MPV |
 | `requests` | `>=2.28` | Peticiones HTTP (M3U remoto, EPG) |
 | `torpy` | `>=1.0` | Cliente Tor en Python puro |
+| `PySocks` | `>=1.7.1` | Soporte SOCKS5/SOCKS5H para urllib3 (proxy Tor) |
 | `pytest` | `>=8.0` | Framework de testing |
 | `pytest-qt` | `>=4.2` | Testing de widgets Qt |
+| `ruff` | `>=0.16` | Linter y formateador |
+| `mypy` | `>=2.0` | Verificación de tipos estática |
 
 ---
 
@@ -43,4 +46,5 @@
 ## Notas
 
 - El binding `mpv` se importa dinámicamente dentro de `mpv_player_adapter.py`; requiere `libmpv-2.dll` en `bin/`.
+- `PySocks` se importa dinámicamente desde `urllib3.contrib.socks`; por eso el spec de PyInstaller lo declara en `hiddenimports` (BUG-01).
 - En el `.exe` empaquetado, `bin/` y `resources/` se incluyen como datos de PyInstaller (ver `IPTVViewer.spec`).

@@ -1,7 +1,7 @@
-import os
 import logging
-import threading
+import os
 import ssl
+import threading
 
 _SSL_CONTEXT_FALLBACK_EXCEPTIONS = (TypeError, ValueError, ssl.SSLError)
 _SOCKET_CLOSE_EXCEPTIONS = (AttributeError, OSError)
@@ -30,8 +30,8 @@ if not hasattr(ssl, 'wrap_socket'):
 
 # --- PARCHE DE COMPATIBILIDAD TORPY (CellPadding Error) ---
 try:
-    from torpy.circuit import CellHandlerManager
     from torpy.cells import CellPadding, TorCellEmpty
+    from torpy.circuit import CellHandlerManager
 
     # 1. Ignorar CellPadding en el manejador de celdas (Evita ERROR en log)
     _orig_handle = CellHandlerManager.handle
@@ -53,7 +53,49 @@ try:
 except Exception as e:
     logging.debug(f"No se pudo aplicar parche de ruidos Tor: {e}")
 
-# Silenciar tracebacks de torpy durante bootstrap (timeouts de conexión son normales)
+# --- PARCHE: SILENCIAR REINTENTOS DE BOOTSTRAP (timeouts de conexión son normales) ---
+try:
+    from torpy import utils as _torpy_utils
+
+    def _torpy_log_retry_patched(exc_info, msg, no_traceback=None):
+        # torpy prueba varios routers hasta encontrar uno disponible; cada
+        # fallo de conexión es esperado y controlado. Degradamos a DEBUG.
+        _torpy_utils.logger.debug(
+            f"torpy reintento de conexión (esperado durante bootstrap): {msg}",
+            exc_info=exc_info[1],
+        )
+
+    _torpy_utils.log_retry = _torpy_log_retry_patched
+    # consesus.py importa log_retry por nombre y lo captura en partials
+    # (functools.partial(log_retry, ...)); si ya está cargado, parcheamos
+    # también esa referencia para que los reintentos pasen por el parche.
+    try:
+        from torpy import consesus as _torpy_consesus
+        _torpy_consesus.log_retry = _torpy_log_retry_patched
+    except ImportError:
+        pass
+    logging.info("Aplicado parche para silenciar reintentos de bootstrap en torpy.")
+except Exception as e:
+    logging.debug(f"No se pudo aplicar parche de reintentos torpy: {e}")
+
+# --- FILTRO: SILENCIAR ERRORES DE CONEXIÓN DEL SERVIDOR SOCKS DE TORPY ---
+# El servidor SOCKS de torpy registra cada reset/cierre de un cliente
+# (ConnectionResetError en csock.recv) como ERROR con traceback completo vía
+# logger.exception('[socks] Some error'). Es comportamiento normal de un proxy:
+# los clientes abren y cierran conexiones constantemente. Como la excepción se
+# captura DENTRO de SocksProxy.run, no se puede envolver con try/except; hay que
+# filtrar el logger.
+class _TorpySocksNoiseFilter(logging.Filter):
+    def filter(self, record):
+        return not (
+            record.name == 'torpy.cli.socks'
+            and record.levelno >= logging.ERROR
+        )
+
+logging.getLogger('torpy.cli.socks').addFilter(_TorpySocksNoiseFilter())
+logging.info("Aplicado filtro para silenciar errores de conexión del servidor SOCKS de torpy.")
+
+# Silenciar INFO de torpy (los parches anteriores ya degradan el ruido ERROR)
 logging.getLogger('torpy').setLevel(logging.WARNING)
 # ---------------------------------------------------------
 
@@ -114,22 +156,21 @@ class TorpyProxyManager:
                     self.tor = TorClient()
                     logging.info("Torpy: Consenso descargado. Creando circuito de 3 saltos...")
 
-                    with self.tor.create_circuit(3) as circuit:
-                        with SocksServer(circuit, "127.0.0.1", port) as socks_serv:
-                            self.server = socks_serv
-                            # APLICAR AQUÍ: Primero restaurar entorno, luego marcar como listos
-                            for var, val in env_backup.items():
-                                if var not in os.environ:
-                                    os.environ[var] = val
+                    with self.tor.create_circuit(3) as circuit, SocksServer(circuit, "127.0.0.1", port) as socks_serv:
+                        self.server = socks_serv
+                        # APLICAR AQUÍ: Primero restaurar entorno, luego marcar como listos
+                        for var, val in env_backup.items():
+                            if var not in os.environ:
+                                os.environ[var] = val
 
-                            self.running = True # AHORA el servidor está listo para recibir conexiones
-                            logging.info(f"Torpy: Servidor SOCKS5 ACTIVADO en 127.0.0.1:{port}")
+                        self.running = True # AHORA el servidor está listo para recibir conexiones
+                        logging.info(f"Torpy: Servidor SOCKS5 ACTIVADO en 127.0.0.1:{port}")
 
-                            try:
-                                socks_serv.start()
-                            except Exception:
-                                if self.running:
-                                    logging.debug("Torpy: El servidor SOCKS se detuvo inesperadamente.")
+                        try:
+                            socks_serv.start()
+                        except Exception:
+                            if self.running:
+                                logging.debug("Torpy: El servidor SOCKS se detuvo inesperadamente.")
                 except Exception as e:
                     logging.error(f"Torpy: Error fatal en el hilo: {e}")
                 finally:
@@ -217,7 +258,8 @@ def _apply_qt_proxy(ptype: str, server: str, port: int, user: str, pwd: str):
     if 'socks5' in ptype:
         q_proxy.setType(QNetworkProxy.ProxyType.Socks5Proxy)
     elif 'socks4' in ptype:
-        q_proxy.setType(QNetworkProxy.ProxyType.Socks4Proxy)
+        # PyQt6 no expone Socks4Proxy; se degrada a SOCKS5.
+        q_proxy.setType(QNetworkProxy.ProxyType.Socks5Proxy)
     else:
         q_proxy.setType(QNetworkProxy.ProxyType.HttpProxy)
 
@@ -261,7 +303,7 @@ def setup_proxy(proxy_cfg: dict):
 
     # 2. Normalizar para el resto del sistema
     norm_cfg = get_standardized_proxy_config(proxy_cfg)
-    ptype = norm_cfg.get('type')
+    ptype = norm_cfg.get('type', 'http')
     server = norm_cfg.get('server')
     port = norm_cfg.get('port', 8080)
     user = norm_cfg.get('username', '')

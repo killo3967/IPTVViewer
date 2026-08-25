@@ -1,9 +1,11 @@
-from typing import List, Iterator
+from collections.abc import Iterator
+
 from .channel import Channel
+
 
 class Playlist:
     """Agregado que gestiona una colección de canales."""
-    def __init__(self, channels: List[Channel] = None):
+    def __init__(self, channels: list[Channel] | None = None):
         self._channels = channels or []
 
     def add_channel(self, channel: Channel):
@@ -22,5 +24,5 @@ class Playlist:
         return len(self._channels)
 
     @property
-    def channels(self) -> List[Channel]:
+    def channels(self) -> list[Channel]:
         return list(self._channels)

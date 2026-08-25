@@ -4,8 +4,8 @@ REQ-1: la máquina de estados de modos de vista es un servicio de aplicación
 Qt-free: estado, serialización, resolución de índice de zapping y helpers de
 geometría/estado de splitter viven aquí, con tipos tuples/str/bytes únicamente.
 """
+from collections.abc import Callable, Sequence
 from enum import Enum
-from typing import Callable, Optional, Sequence
 
 
 class ViewMode(Enum):
@@ -60,7 +60,7 @@ class ViewModeController:
 
 def resolve_zap_index(
     channels: Sequence, current_channel, direction: int
-) -> Optional[int]:
+) -> int | None:
     """Resuelve el índice destino de zapping con wrap-around (REQ-5).
 
     - Lista vacía -> ``None`` (el llamador hace no-op).
@@ -95,7 +95,7 @@ def geometry_to_str(x: int, y: int, w: int, h: int) -> str:
     return f"{x},{y},{w},{h}"
 
 
-def str_to_geometry(raw: str) -> Optional[tuple[int, int, int, int]]:
+def str_to_geometry(raw: str) -> tuple[int, int, int, int] | None:
     """Parsea ``"x,y,w,h"`` a tupla; devuelve ``None`` ante cualquier error.
 
     ``x``/``y`` pueden ser negativos (multi-monitor); ``w``/``h`` deben ser > 0.
@@ -120,7 +120,7 @@ def encode_splitter_state(state: bytes) -> str:
     return base64.b64encode(state).decode("ascii")
 
 
-def decode_splitter_state(encoded: str) -> Optional[bytes]:
+def decode_splitter_state(encoded: str) -> bytes | None:
     """Decodifica el estado base64 del splitter; ``None`` ante cualquier error.
 
     Nunca lanza excepción (un ``config.ini`` corrupto no debe romper el arranque).

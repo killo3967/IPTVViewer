@@ -1,10 +1,20 @@
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, 
-    QCheckBox, QSpinBox, QLineEdit, QPushButton, 
-    QGroupBox, QScrollArea, QWidget,
-    QComboBox, QTabWidget, QDoubleSpinBox
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDoubleSpinBox,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLineEdit,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt
+
 
 class EngineConfigDialog(QDialog):
     """Diálogo para configurar el motor de reproducción y sus parámetros técnicos."""

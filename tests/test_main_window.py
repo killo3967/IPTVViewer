@@ -10,21 +10,22 @@ import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QObject, pyqtSignal, Qt  # noqa: E402
-from PyQt6.QtWidgets import QApplication, QWidget  # noqa: E402
+from PyQt6.QtCore import QObject, Qt, pyqtSignal
+from PyQt6.QtWidgets import QApplication, QWidget
 
-from src.application.services.view_mode_controller import ViewMode  # noqa: E402
-from src.application.services.view_mode_controller import resolve_zap_index  # noqa: E402
-from src.application.services.view_mode_controller import encode_splitter_state  # noqa: E402
-from src.domain.entities.channel import Channel  # noqa: E402
-from src.domain.entities.playlist import Playlist  # noqa: E402
-from src.infrastructure.ui.main_window import IPTVMainWindow  # noqa: E402
+from src.application.services.view_mode_controller import (
+    ViewMode,
+    encode_splitter_state,
+    )
+from src.domain.entities.channel import Channel
+from src.domain.entities.playlist import Playlist
+from src.infrastructure.ui.main_window import IPTVMainWindow
 
 
 class FakePlaylistLoader:
     """Devuelve siempre la misma playlist fija."""
 
-    def __init__(self, playlist: Playlist = None):
+    def __init__(self, playlist: Playlist | None = None):
         self._playlist = playlist or Playlist()
 
     def load_and_filter(self, source: str, group_filter: str = "") -> Playlist:
@@ -133,7 +134,7 @@ def _pump_events(seconds: float):
         time.sleep(0.01)
 
 
-def make_window(config: dict = None, channels=None, save_callback=None, playback_manager=None):
+def make_window(config: dict | None = None, channels=None, save_callback=None, playback_manager=None):
     """Construye IPTVMainWindow inyectando fakes."""
     if config is None:
         config = make_config()
@@ -144,10 +145,10 @@ def make_window(config: dict = None, channels=None, save_callback=None, playback
     if playback_manager is None:
         playback_manager = FakePlaybackManager()
     window = IPTVMainWindow(
-        playlist_loader,
+        playlist_loader,  # type: ignore[arg-type]
         playback_manager,
-        epg_manager,
-        logo_loader,
+        epg_manager,  # type: ignore[arg-type]
+        logo_loader,  # type: ignore[arg-type]
         config,
         save_callback,
     )
@@ -371,7 +372,7 @@ def test_cursor_timeout_hides_cursor(qtbot):
 def test_mouse_move_restores_cursor_and_restarts_timer(qtbot):
     # offscreen no entrega eventos de ratón sintéticos de forma fiable:
     # se invoca el eventFilter directamente (estrategia headless-safe del diseño)
-    from PyQt6.QtCore import QEvent, QPointF, QPoint
+    from PyQt6.QtCore import QEvent, QPoint, QPointF
     from PyQt6.QtGui import QMouseEvent
 
     window, _ = make_window()

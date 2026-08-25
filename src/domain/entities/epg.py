@@ -1,7 +1,7 @@
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, List, Dict
+
 
 def normalize_name(name: str) -> str:
     """Normaliza un nombre para facilitar el matching (minúsculas, sin espacios ni caracteres especiales)."""
@@ -18,8 +18,8 @@ class Program:
     start_time: datetime
     end_time: datetime
     channel_id: str  # Referencia al tvg-id del canal
-    description: Optional[str] = None
-    category: Optional[str] = None
+    description: str | None = None
+    category: str | None = None
 
     def is_currently_airing(self) -> bool:
         """Verifica si el programa se está emitiendo en este momento."""
@@ -28,7 +28,7 @@ class Program:
 
 class EPGData:
     """Agregado que gestiona la colección de programas."""
-    def __init__(self, programs: List[Program] = None, channel_names: Dict[str, str] = None):
+    def __init__(self, programs: list[Program] | None = None, channel_names: dict[str, str] | None = None):
         self._programs = programs or []
         # Mapa de channel_id -> nombre normalizado (opcional, para ayudar al matching)
         self._channel_id_to_normalized_name = {
@@ -36,14 +36,14 @@ class EPGData:
         }
         
         # Mapeo rápido de channel_id -> lista de programas
-        self._programs_by_channel: Dict[str, List[Program]] = {}
+        self._programs_by_channel: dict[str, list[Program]] = {}
         for p in self._programs:
             if p.channel_id not in self._programs_by_channel:
                 self._programs_by_channel[p.channel_id] = []
             self._programs_by_channel[p.channel_id].append(p)
             
         # Mapeo por nombre normalizado (para fallback)
-        self._programs_by_normalized_name: Dict[str, List[Program]] = {}
+        self._programs_by_normalized_name: dict[str, list[Program]] = {}
         if channel_names:
             for channel_id, name in channel_names.items():
                 norm_name = normalize_name(name)
@@ -55,17 +55,17 @@ class EPGData:
                         self._programs_by_channel.get(channel_id, [])
                     )
 
-    def get_programs_for_channel(self, channel_id: str) -> List[Program]:
+    def get_programs_for_channel(self, channel_id: str) -> list[Program]:
         """Devuelve todos los programas para un canal específico, ordenados por tiempo."""
         filtered = self._programs_by_channel.get(channel_id, [])
         return sorted(filtered, key=lambda p: p.start_time)
 
-    def get_programs_by_normalized_name(self, normalized_name: str) -> List[Program]:
+    def get_programs_by_normalized_name(self, normalized_name: str) -> list[Program]:
         """Devuelve los programas buscando por el nombre normalizado del canal."""
         filtered = self._programs_by_normalized_name.get(normalized_name, [])
         return sorted(filtered, key=lambda p: p.start_time)
 
-    def get_current_program(self, channel_id: str) -> Optional[Program]:
+    def get_current_program(self, channel_id: str) -> Program | None:
         """Devuelve el programa que se está emitiendo ahora para un canal."""
         programs = self._programs_by_channel.get(channel_id, [])
         for p in programs:
@@ -73,7 +73,7 @@ class EPGData:
                 return p
         return None
 
-    def get_current_program_by_normalized_name(self, normalized_name: str) -> Optional[Program]:
+    def get_current_program_by_normalized_name(self, normalized_name: str) -> Program | None:
         """Devuelve el programa actual buscando por nombre normalizado."""
         programs = self._programs_by_normalized_name.get(normalized_name, [])
         for p in programs:
@@ -82,5 +82,5 @@ class EPGData:
         return None
 
     @property
-    def programs(self) -> List[Program]:
+    def programs(self) -> list[Program]:
         return list(self._programs)

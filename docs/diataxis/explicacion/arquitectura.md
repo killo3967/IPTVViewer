@@ -81,7 +81,7 @@ Implementa **cómo** se conecta el sistema al mundo exterior.
 2. `TorpyProxyManager.start()` lanza hilo con circuito de 3 saltos
 3. Variables de entorno (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`) se configuran
 4. Motores VLC y MPV heredan el proxy vía entorno o configuración directa
-5. `_update_tor_info()` consulta IP externa vía `ip-api.com` para verificar anonimato
+5. `_update_tor_info()` consulta IP externa vía `ip-api.com` y confirma la salida Tor con `check.torproject.org/api/ip` (`IsTor`)
 
 ---
 

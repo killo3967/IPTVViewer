@@ -1,7 +1,8 @@
 import logging
-from typing import Optional, List
-from src.domain.ports.i_epg_repo import IEPGRepository
+
 from src.domain.entities.epg import EPGData, Program, normalize_name
+from src.domain.ports.i_epg_repo import IEPGRepository
+
 
 class EPGManager:
     """Servicio de aplicación para gestionar la guía de programación (EPG)."""
@@ -17,7 +18,7 @@ class EPGManager:
         logging.info(f"Actualizando EPG desde: {source}")
         self._epg_data = self._repository.load_epg(source)
 
-    def get_currently_airing(self, tvg_id: str, channel_name: str = "") -> Optional[Program]:
+    def get_currently_airing(self, tvg_id: str, channel_name: str = "") -> Program | None:
         """Obtiene el programa actual con fallback por nombre normalizado."""
         if not tvg_id and not channel_name: return None
         
@@ -33,7 +34,7 @@ class EPGManager:
             
         return None
 
-    def get_program_schedule(self, tvg_id: str, channel_name: str = "") -> List[Program]:
+    def get_program_schedule(self, tvg_id: str, channel_name: str = "") -> list[Program]:
         """Obtiene la lista de programas con fallback por nombre normalizado."""
         if not tvg_id and not channel_name: return []
         

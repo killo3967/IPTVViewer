@@ -1,12 +1,14 @@
-import xml.etree.ElementTree as ET
-import requests
 import gzip
 import logging
+import xml.etree.ElementTree as ET
 from datetime import datetime
-from typing import Optional
 from pathlib import Path
-from src.domain.entities.epg import Program, EPGData
+
+import requests
+
+from src.domain.entities.epg import EPGData, Program
 from src.domain.ports.i_epg_repo import IEPGRepository
+
 
 class XMLTVRepository(IEPGRepository):
     """Adaptador de infraestructura para cargar datos EPG desde archivos XMLTV."""
@@ -62,7 +64,7 @@ class XMLTVRepository(IEPGRepository):
                 chan_id = chan_elem.get('id')
                 display_name = chan_elem.find('display-name')
                 if chan_id and display_name is not None:
-                    channel_names[chan_id] = display_name.text
+                    channel_names[chan_id] = display_name.text or ""
 
             # 2. Parsear programas
             for prog_elem in root.findall('programme'):
@@ -70,11 +72,11 @@ class XMLTVRepository(IEPGRepository):
                 start_str = prog_elem.get('start')
                 end_str = prog_elem.get('stop')
                 
-                if not all([channel_id, start_str, end_str]):
+                if not channel_id or not start_str or not end_str:
                     continue
 
                 title_elem = prog_elem.find('title')
-                title = title_elem.text if title_elem is not None else "Sin título"
+                title = (title_elem.text or "Sin título") if title_elem is not None else "Sin título"
                 
                 desc_elem = prog_elem.find('desc')
                 description = desc_elem.text if desc_elem is not None else ""

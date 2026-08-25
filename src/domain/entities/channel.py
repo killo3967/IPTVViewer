@@ -1,5 +1,5 @@
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
+
 
 @dataclass(frozen=True)
 class Channel:
@@ -7,8 +7,8 @@ class Channel:
     name: str
     url: str
     group: str = "Otros"
-    logo_url: Optional[str] = None
-    tvg_id: Optional[str] = None
+    logo_url: str | None = None
+    tvg_id: str | None = None
 
     def __post_init__(self):
         if not self.name:

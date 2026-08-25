@@ -57,8 +57,23 @@ python main.py
 | Archivo | Propósito |
 |---|---|
 | `config.ini` | Fuente M3U, EPG, motor activo, proxy, opciones técnicas |
-| `requirements.txt` | Dependencias directas (7 paquetes) |
+| `requirements.txt` | Dependencias directas (10 paquetes) |
+| `pyproject.toml` | Configuración de Ruff (linter) y Mypy (tipado) |
 | `skills-lock.json` | Versiones bloqueadas de skills del agente |
+
+---
+
+## Verificación de código (ruff + mypy)
+
+El proyecto usa **Ruff** (linter) y **Mypy** (tipado estático), configurados en `pyproject.toml`:
+
+| Herramienta | Comando | Qué verifica |
+|---|---|---|
+| Ruff | `.\\.venv\\Scripts\\ruff.exe check .` | Lint: estilo, imports, bugs |
+| Mypy | `.\\.venv\\Scripts\\mypy.exe src main.py tests` | Tipado estático |
+| Pytest | `.\\.venv\\Scripts\\python.exe -m pytest` | Tests (150) |
+
+> Ruff también incluye un formateador (`ruff format .`) que unifica el estilo visual. Aún no está aplicado al árbol completo; consúltalo antes de lanzarlo.
 
 ---
 

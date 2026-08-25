@@ -57,6 +57,16 @@ python -m venv .venv
 .\.venv\Scripts\python.exe main.py
 ```
 
+### Calidad de código (lint y tipado)
+
+El proyecto usa [Ruff](https://docs.astral.sh/ruff/) (linter) y [Mypy](https://mypy-lang.org/) (tipado estático), configurados en `pyproject.toml`:
+
+```powershell
+.\.venv\Scripts\ruff.exe check .               # linter
+.\.venv\Scripts\mypy.exe src main.py tests     # tipado estático
+.\.venv\Scripts\python.exe -m pytest           # tests
+```
+
 ## Compilación (PyInstaller)
 
 El ejecutable se genera con PyInstaller a partir de `IPTVViewer.spec`:
@@ -99,6 +109,7 @@ IPTVViewer/
 ├── resources/              # Recursos (logo)
 ├── openspec/               # Artefactos SDD/OpenSpec
 ├── config.ini.example      # Plantilla de configuración
+├── pyproject.toml          # Config de Ruff y Mypy
 └── requirements.txt
 ```
 
