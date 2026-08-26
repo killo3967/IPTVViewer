@@ -54,3 +54,15 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+function InitializeSetup(): Boolean;
+begin
+  Result := True;
+  if FileExists(ExpandConstant('{localappdata}\Programs\IPTVViewer\IPTVViewer.exe')) then
+    if MsgBox('IPTVViewer ya está instalado en este equipo.' + #13#10 + #13#10 +
+              'Se va a sobrescribir con la nueva versión. ¿Quieres continuar?',
+              mbConfirmation, MB_YESNO) <> IDYES then
+      Result := False;
+end;
+
