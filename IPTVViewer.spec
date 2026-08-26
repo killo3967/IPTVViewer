@@ -29,6 +29,7 @@ exe = EXE(
     a.datas,
     exclude_binaries=False,
     name='IPTVViewer',
+    icon='assets/iptvviewer_logo.ico',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

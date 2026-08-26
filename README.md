@@ -1,124 +1,126 @@
-# IPTVViewer
+<p align="center">
+  <img src="assets/iptvviewer_logo.png" alt="IPTVViewer" width="240">
+</p>
 
-Reproductor IPTV de escritorio para Windows: reproduce listas M3U con guía EPG, motores de reproducción intercambiables (mpv/VLC) y proxy Tor integrado. Se distribuye como un único `.exe` autocontenido, sin instalación.
+<h1 align="center">IPTVViewer</h1>
 
-## Empezar (sin compilar nada)
+<p align="center"><strong>Tu televisión por Internet, sin complicaciones.</strong></p>
 
-1. Descarga `IPTVViewer.exe` desde la [última release](https://github.com/killo3967/IPTVViewer/releases/latest).
-2. Colócalo en una carpeta con permisos de escritura (evita `C:\Program Files`).
-3. Ejecútalo. En el primer arranque se crean `config.ini` y `logs/` junto al ejecutable.
+IPTVViewer es un reproductor de televisión por Internet para **Windows** que convierte tus listas IPTV en una experiencia de televisión completa, fluida y privada. Carga tus listas **M3U**, consulta la guía de programación **EPG**, cambia de canal al instante y protege tu conexión con **proxies** — todo desde una sola aplicación ligera y portátil.
 
-> **Windows SmartScreen**: el ejecutable no está firmado digitalmente, por lo que Windows mostrará un aviso. Pulsa **"Más información" → "Ejecutar de todos modos"**.
+---
 
-## Características
+## Qué hace
 
-| Área | Detalle |
-|------|---------|
-| Reproducción | Motores **mpv** (incluido en el `.exe`) y **VLC** (requiere instalación) |
-| Listas | Fuentes M3U por nombre, con filtro y EPG independientes por fuente |
-| EPG | XMLTV, con soporte de archivos comprimidos `.gz` |
-| Anonimato | Proxy Tor integrado (torpy), sin dependencias externas |
-| Interfaz | PyQt6 |
+- 📺 Reproduce canales en directo desde listas **M3U**.
+- 📅 Guía de programación **EPG (XMLTV)** integrada, con parrilla de canales.
+- 🔀 **Zapping** instantáneo: cambia de canal con las flechas.
+- 🖼️ Logos de canales y avisos en pantalla.
+- ⚡ **Aceleración por hardware** para un vídeo fluido.
+- 🖥️ **Modos de visualización** flexibles (normal, compacto, vídeo y ventana flotante).
+- 🛡️ Soporte de **proxies** (HTTP, SOCKS y Tor) para privacidad y acceso.
+- 🔄 Aviso de **nuevas versiones** disponibles.
+- 🚀 **Portátil**: no requiere permisos de administrador.
 
-## Requisitos
+---
 
-| Motor | Requisito |
-|-------|-----------|
-| **mpv** (predeterminado) | Ninguno: va dentro del `.exe` |
-| **VLC** | VLC Media Player 64-bit instalado |
+## Motores de reproducción
 
-## Uso
+IPTVViewer incluye **tres motores** para que elijas el que mejor se adapta a tu equipo:
 
-1. Arranca la aplicación.
-2. Añade o edita fuentes M3U desde la interfaz (o edita `config.ini`).
-3. Selecciona el motor de reproducción (mpv o VLC).
-4. Opcional: activa el proxy Tor desde la configuración.
+| Motor | Ideal para | Descarga |
+|-------|-----------|----------|
+| **mpv** | Máxima compatibilidad | Automática |
+| **mpv (AVX2)** | Procesadores modernos, más rendimiento | Automática |
+| **VLC** | Compatibilidad total y proxy SOCKS/Tor | Automática |
 
-> La plantilla incluye una fuente de ejemplo local (`TU_SERVIDOR`). Sustitúyela por tu propia lista M3U.
+- **mpv** — funciona en prácticamente cualquier equipo.
+- **mpv (AVX2)** — aprovecha las instrucciones AVX2 de las CPUs modernas para un extra de rendimiento.
+- **VLC** — el clásico, ideal si reproduces a través de un proxy SOCKS o Tor.
 
-## Configuración
+> **Sin configuración manual.** La primera vez que arranques, IPTVViewer descarga automáticamente el motor que necesites.
 
-Copia `config.ini.example` a `config.ini` (la aplicación lo crea sola en el primer arranque). Secciones:
+---
 
-| Sección | Contenido |
-|---------|-----------|
-| `[SETTINGS]` | Fuente activa, motor de reproducción, aceleración por hardware |
-| `[source.N]` | Una entrada por fuente: nombre, URL M3U, filtro y EPG |
-| `[VLC]` | Parámetros del motor VLC (buffer, jitter, sincronización) |
-| `[MPV]` | Parámetros del motor mpv (caché, user-agent, demuxer) |
-| `[PROXY]` | Proxy Tor (servidor, puerto, reglas de bypass) |
+## Privacidad y proxies
 
-## Desarrollo (desde fuente)
+¿Quieres ver la televisión a través de un proxy o de la red Tor? IPTVViewer lo soporta:
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-.\.venv\Scripts\pip.exe install -r requirements.txt
-.\.venv\Scripts\python.exe main.py
+- **HTTP / HTTPS**
+- **SOCKS4 / SOCKS5**
+- **Tor** — con verificación automática de que tu tráfico sale realmente por la red Tor.
+
+Configura el proxy en unos segundos desde el menú **Red → Proxy**.
+
+---
+
+## Modos de visualización
+
+Adapta la ventana a lo que estés viendo en cada momento:
+
+| Modo | Qué hace |
+|------|----------|
+| **Normal** | Lista de canales + reproductor, la vista completa. |
+| **Compacto** | Interfaz reducida para ocupar menos espacio. |
+| **Vídeo** | Solo el vídeo, sin distracciones. |
+| **PIP** | Ventana flotante siempre visible, para ver la TV mientras haces otras cosas. |
+
+---
+
+## Atajos de teclado
+
+| Tecla | Acción |
+|-------|--------|
+| `Alt+1` | Modo Normal |
+| `Alt+2` | Modo Compacto |
+| `Alt+3` | Modo Vídeo |
+| `Alt+4` / `P` | Ventana PIP |
+| `F` | Pantalla completa |
+| `Esc` | Salir de pantalla completa |
+| `↑` / `↓` | Canal anterior / siguiente |
+| `Ctrl+G` | Parrilla EPG |
+
+---
+
+## Cómo configurar tus listas
+
+Puedes tener varias listas (por ejemplo, una de canales españoles y otra de Pluto TV) y cambiar entre ellas cuando quieras.
+
+Desde el menú **Listas** puedes **añadir**, **editar** o **eliminar** listas. Cada lista se compone de:
+
+| Campo | Descripción |
+|-------|-------------|
+| **Nombre** | El nombre que verás en la app. |
+| **M3U** | La URL de tu lista de canales. |
+| **Filtro** | Filtra los canales por grupo (opcional). |
+| **EPG** | La URL de la guía de programación XMLTV (opcional). |
+
+Las listas se guardan en `config.ini`. Ejemplo:
+
+```ini
+[source.0]
+name = TV España
+m3u = http://TU_SERVIDOR/m3u/xteve.m3u
+filter = SPAIN
+epg = http://TU_SERVIDOR/xmltv/xteve.xml
 ```
 
-### Calidad de código (lint y tipado)
+---
 
-El proyecto usa [Ruff](https://docs.astral.sh/ruff/) (linter) y [Mypy](https://mypy-lang.org/) (tipado estático), configurados en `pyproject.toml`:
+## Instalación
 
-```powershell
-.\.venv\Scripts\ruff.exe check .               # linter
-.\.venv\Scripts\mypy.exe src main.py tests     # tipado estático
-.\.venv\Scripts\python.exe -m pytest           # tests
-```
+1. Ve a la página de **[Releases](https://github.com/killo3967/IPTVViewer/releases)**.
+2. Descarga el **instalador** (`IPTVViewer-Setup-*.exe`) o el **ejecutable portátil** (`IPTVViewer.exe`).
+3. Ejecútalo y listo. Sin dependencias: los motores se descargan solos en el primer arranque.
 
-## Compilación (PyInstaller)
+---
 
-El ejecutable se genera con PyInstaller a partir de `IPTVViewer.spec`:
+## Documentación técnica
 
-```powershell
-.\.venv\Scripts\pip.exe install pyinstaller
-.\.venv\Scripts\pyinstaller.exe IPTVViewer.spec
-```
+¿Eres desarrollador o quieres profundizar? La documentación técnica está organizada según el framework **Diataxis** en [`docs/diataxis/`](docs/diataxis/index.md): arquitectura, entorno de desarrollo, operaciones, referencia de configuración y dependencias.
 
-Esto produce `dist\IPTVViewer.exe` (modo *onefile*, autocontenido).
+---
 
-### DLLs de mpv (no versionadas)
+## Licencia
 
-Las DLLs del motor mpv **no están incluidas en este repositorio** (`bin/mpv-1.dll` y `bin/libmpv-2.dll`): son binarios externos de ~112 MB cada uno que superan el límite de GitHub. El `.exe` ya compilado las lleva dentro, pero para **recompilar** desde este código necesitas obtenerlas:
-
-1. Descarga libmpv para Windows desde la web oficial de mpv (<https://mpv.io/installation/>) o desde un build comunitario que incluya `libmpv-2.dll`.
-2. Coloca las DLLs en la carpeta `bin/` del proyecto:
-
-   ```
-   bin/mpv-1.dll
-   bin/libmpv-2.dll
-   ```
-
-3. Ejecuta de nuevo `pyinstaller IPTVViewer.spec`.
-
-Sin estas DLLs, el motor **mpv** no arrancará (el motor **VLC** sí funcionará si VLC está instalado). El código **no** las descarga automáticamente.
-
-## Estructura
-
-```
-IPTVViewer/
-├── main.py                 # Punto de entrada
-├── src/
-│   ├── application/        # Servicios de aplicación
-│   ├── domain/             # Entidades y puertos (arquitectura hexagonal)
-│   └── infrastructure/     # Adaptadores (UI, reproductores, repositorios)
-├── tests/                  # Tests (pytest)
-├── pruebas/                # Scripts de diagnóstico
-├── docs/                   # Documentación
-├── resources/              # Recursos (logo)
-├── openspec/               # Artefactos SDD/OpenSpec
-├── config.ini.example      # Plantilla de configuración
-├── pyproject.toml          # Config de Ruff y Mypy
-└── requirements.txt
-```
-
-## Solución de problemas
-
-| Síntoma | Causa probable |
-|---------|----------------|
-| Un canal no carga | URL M3U inválida o filtro/EPG mal configurado |
-| El motor mpv no arranca (solo al compilar) | Faltan las DLLs en `bin/` |
-| El motor VLC no funciona | VLC Media Player no está instalado |
-
-Los registros en `logs/iptv_viewer.log` ayudan a diagnosticar errores.
+[MIT](LICENSE) · Copyright (c) 2026 killo3967
