@@ -13,21 +13,29 @@ from PyQt6.QtWidgets import QApplication, QMessageBox, QProgressDialog
 
 from src.infrastructure.utils.mpv_dll_bootstrap import (
     default_bin_dir,
+    default_bin_v3_dir,
     ensure_libmpv_dll,
+    ensure_libmpv_v3_dll,
     is_libmpv_available,
+    is_libmpv_v3_available,
 )
 
 _logger = logging.getLogger(__name__)
 
 
-def _download_mpv_dialog(parent=None) -> str | None:
-    """Muestra la barra de progreso y descarga libmpv-2.dll.
+def _download_mpv_dialog(parent=None, variant: str = "generic") -> str | None:
+    """Muestra la barra de progreso y descarga libmpv-2.dll de ``variant``.
 
     Devuelve ``None`` si quedó lista, o un mensaje de error si falló/canceló.
     """
-    bin_dir = default_bin_dir()
-    _logger.info("MPV: libmpv-2.dll no encontrada. Descargando motor mpv...")
-    dialog = QProgressDialog("Descargando motor mpv...", "Cancelar", 0, 100, parent)
+    if variant == "v3":
+        bin_dir = default_bin_v3_dir()
+        label = "Descargando motor mpv (AVX2)..."
+    else:
+        bin_dir = default_bin_dir()
+        label = "Descargando motor mpv..."
+    _logger.info("MPV: libmpv-2.dll no encontrada. %s", label)
+    dialog = QProgressDialog(label, "Cancelar", 0, 100, parent)
     dialog.setWindowTitle("IPTVViewer")
     dialog.setWindowModality(Qt.WindowModality.WindowModal)
     dialog.setMinimumDuration(0)
@@ -42,7 +50,10 @@ def _download_mpv_dialog(parent=None) -> str | None:
 
     error_msg = None
     try:
-        ensure_libmpv_dll(bin_dir, progress=_on_progress)
+        if variant == "v3":
+            ensure_libmpv_v3_dll(bin_dir, progress=_on_progress)
+        else:
+            ensure_libmpv_dll(bin_dir, progress=_on_progress)
     except Exception as e:
         _logger.error("MPV: fallo al descargar libmpv-2.dll: %s", e)
         error_msg = str(e)
@@ -77,13 +88,38 @@ def ensure_mpv_available(parent=None) -> bool:
     return True
 
 
-def ensure_mpv_engine(engine: str, parent=None) -> str:
-    """Garantiza que el motor mpv tenga ``libmpv-2.dll`` antes de usarlo.
+def ensure_mpv_v3_available(parent=None) -> bool:
+    """Descarga libmpv-2.dll (variante v3/AVX2) si falta, con barra de progreso.
 
-    Si el motor no es ``'mpv'``, devuelve el motor sin cambios. Si es mpv y la
-    DLL falta, la descarga; si falla o el usuario cancela, devuelve ``'vlc'``
-    como fallback (nunca deja la app sin motor de reproducción).
+    Análoga a ``ensure_mpv_available`` pero para la variante AVX2 en ``bin-v3/``.
     """
-    if engine != "mpv":
-        return engine
-    return "mpv" if ensure_mpv_available(parent) else "vlc"
+    if is_libmpv_v3_available():
+        return True
+
+    error = _download_mpv_dialog(parent, variant="v3")
+    if error:
+        QMessageBox.warning(
+            parent,
+            "Motor mpv (AVX2) no disponible",
+            "No se pudo descargar el motor mpv con AVX2 (libmpv-2.dll v3).\n\n"
+            f"Detalle: {error}\n\n"
+            "Podrás reproducir con mpv (sin AVX2) o VLC.",
+        )
+        return False
+    return True
+
+
+def ensure_mpv_engine(engine: str, parent=None) -> str:
+    """Garantiza que el motor mpv (genérico o v3) tenga su ``libmpv-2.dll``.
+
+    Si el motor no es mpv, lo devuelve sin cambios. Para ``'mpv'`` descarga la
+    variante genérica y para ``'mpv-v3'`` la variante AVX2. Ante fallo/cancelación
+    devuelve un motor alternativo (nunca deja la app sin reproducción).
+    """
+    if engine == "mpv":
+        return "mpv" if ensure_mpv_available(parent) else "vlc"
+    if engine == "mpv-v3":
+        if ensure_mpv_v3_available(parent):
+            return "mpv-v3"
+        return "mpv" if ensure_mpv_available(parent) else "vlc"
+    return engine

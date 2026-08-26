@@ -244,41 +244,54 @@ def main():
     # 2. Inicializar Qt
     app = QApplication(sys.argv)
 
-    # 3. Asegurar mpv al arrancar (descarga si falta, independiente del motor activo)
-    from src.infrastructure.ui.mpv_bootstrap_dialog import ensure_mpv_available
+    # 3. Asegurar los motores mpv al arrancar (descarga si falta, independiente del motor activo)
+    from src.infrastructure.ui.mpv_bootstrap_dialog import (
+        ensure_mpv_available,
+        ensure_mpv_v3_available,
+    )
     ensure_mpv_available()
+    ensure_mpv_v3_available()
     engine = config.get('player_engine', 'vlc')
 
-    # 3a. Si el motor es VLC y no está instalado, resolverlo antes de continuar
+    # 3a. Validar el motor mpv elegido: si su DLL no quedó disponible, caer a uno usable.
+    from src.infrastructure.utils.mpv_dll_bootstrap import (
+        default_bin_dir,
+        is_libmpv_available,
+        is_libmpv_v3_available,
+    )
+    if engine == 'mpv' and not is_libmpv_available(default_bin_dir()):
+        engine = 'vlc'
+    elif engine == 'mpv-v3' and not is_libmpv_v3_available():
+        engine = 'mpv' if is_libmpv_available(default_bin_dir()) else 'vlc'
+
+    # 3b. Asegurar VLC: si no está disponible, descargar el portátil. Si además es
+    # el motor activo y sigue sin estar, resolverlo interactivamente.
     from src.infrastructure.utils.vlc_bootstrap import is_vlc_available
-    if engine == 'vlc' and not is_vlc_available():
+    if not is_vlc_available():
         from src.infrastructure.ui.vlc_bootstrap_dialog import (
             point_vlc_folder,
             resolve_vlc,
             run_full_install,
             run_portable_install,
         )
-        from src.infrastructure.utils.mpv_dll_bootstrap import (
-            default_bin_dir,
-            is_libmpv_available,
-        )
-        while not is_vlc_available():
-            choice = resolve_vlc(mpv_available=is_libmpv_available(default_bin_dir()))
-            if choice == 'mpv':
-                engine = 'mpv'
-                break
-            if choice == 'point':
-                if point_vlc_folder() is not None:
+        if not run_portable_install() and engine == 'vlc':
+            while not is_vlc_available():
+                choice = resolve_vlc(mpv_available=is_libmpv_available(default_bin_dir()))
+                if choice == 'mpv':
+                    engine = 'mpv'
                     break
-            elif choice == 'install_full':
-                run_full_install()
-            elif choice == 'install_portable':
-                if run_portable_install():
-                    break
-            elif choice == 'retry':
-                continue
-            elif choice == 'exit':
-                sys.exit(0)
+                if choice == 'point':
+                    if point_vlc_folder() is not None:
+                        break
+                elif choice == 'install_full':
+                    run_full_install()
+                elif choice == 'install_portable':
+                    if run_portable_install():
+                        break
+                elif choice == 'retry':
+                    continue
+                elif choice == 'exit':
+                    sys.exit(0)
 
     # 3b. Importar adaptadores (lazy: mpv_player_adapter solo tras asegurar la DLL)
     from src.infrastructure.adapters.mpv_player_adapter import MpvPlayerAdapter

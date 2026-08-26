@@ -8,22 +8,29 @@ from typing import Any, ClassVar
 
 # --- CONFIGURACIÓN DE LIBMPV (DEBE IR ANTES DE IMPORT MPV) ---
 # La DLL ya NO viaja dentro del bundle: la app la descarga en runtime junto
-# al exe (SCRIPT_DIR/bin) antes de importar este módulo. Se conserva
-# _MEIPASS/bin solo por compatibilidad con bundles antiguos que sí la traían.
-def _candidate_bin_dirs() -> list[Path]:
+# al exe antes de importar este módulo. Se conserva _MEIPASS/<dir> solo por
+# compatibilidad con bundles antiguos que sí la traían. Hay dos variantes:
+# 'generic' (sin AVX2, en bin/) y 'v3' (AVX2, en bin-v3/).
+def _variant_dir_name(variant: str) -> str:
+    """Nombre del subdirectorio que contiene la DLL para la variante dada."""
+    return "bin" if variant == "generic" else "bin-v3"
+
+
+def _candidate_bin_dirs(variant: str = "generic") -> list[Path]:
     """Directorios candidatos para libmpv-2.dll, en orden de prioridad."""
+    dir_name = _variant_dir_name(variant)
     if getattr(sys, 'frozen', False):
         return [
-            Path(getattr(sys, "_MEIPASS", "")) / "bin",
-            Path(sys.executable).parent / "bin",
+            Path(getattr(sys, "_MEIPASS", "")) / dir_name,
+            Path(sys.executable).parent / dir_name,
         ]
-    return [Path(__file__).parent.parent.parent.parent / "bin"]
+    return [Path(__file__).parent.parent.parent.parent / dir_name]
 
 
-def _configure_dll_paths() -> None:
+def _configure_dll_paths(variant: str = "generic") -> None:
     """Añade a PATH y a los DLL directories de Windows toda ruta con libmpv-2.dll."""
     found = False
-    for bin_path in _candidate_bin_dirs():
+    for bin_path in _candidate_bin_dirs(variant):
         if not (bin_path / "libmpv-2.dll").exists():
             continue
         found = True
@@ -41,7 +48,6 @@ def _configure_dll_paths() -> None:
         logging.warning("MPV: libmpv-2.dll no encontrada en ninguna ruta de búsqueda.")
 
 
-_configure_dll_paths()
 # -----------------------------------------------------------
 
 from src.domain.ports.i_player import IPlayer
@@ -80,21 +86,32 @@ class MpvPlayerAdapter(IPlayer):
         "file_logging": True
     }
 
-    def __init__(self, mpv_config: dict | None = None, proxy_config: dict | None = None):
+    def __init__(
+        self,
+        mpv_config: dict | None = None,
+        proxy_config: dict | None = None,
+        variant: str = "generic",
+    ):
         """
         Inicializa el adaptador con una configuración personalizada.
+
+        ``variant`` elige qué ``libmpv-2.dll`` cargar: ``'generic'`` (sin AVX2,
+        en ``bin/``) o ``'v3'`` (AVX2, en ``bin-v3/``). Debe decidirse antes del
+        primer ``import mpv`` del proceso.
         """
         self._config = self.DEFAULT_CONFIG.copy()
         if mpv_config:
             self._config.update(mpv_config)
 
         self._proxy_config = proxy_config
+        self._variant = variant
         self._player: Any = None
         self._window_id: int | None = None
         self._current_url: str | None = None
         self._reconnecting = False # Flag para evitar bucles de reconexión
 
-        # mpv ya está importado y la DLL cargada gracias al setup previo en este módulo
+        # Configurar el directorio de la DLL de la variante ANTES de importar mpv.
+        _configure_dll_paths(variant)
         self._init_mpv()
 
     def _init_mpv(self):

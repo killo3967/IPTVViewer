@@ -18,8 +18,11 @@ import requests
 from src.infrastructure.utils.mpv_dll_bootstrap import (
     MPV_ARCHIVE_URL,
     MPV_DLL_FILENAME,
+    MPV_FALLBACK_URL,
+    MPV_V3_ARCHIVE_URLS,
     MpvDllBootstrapError,
     ensure_libmpv_dll,
+    ensure_libmpv_v3_dll,
     is_libmpv_available,
     libmpv_dll_path,
 )
@@ -195,6 +198,54 @@ def test_ensure_raises_bootstrap_error_on_download_failure(tmp_path):
         return_value=session,
     ), pytest.raises(MpvDllBootstrapError):
         ensure_libmpv_dll(tmp_path)
+
+
+def test_ensure_falls_back_to_second_source_when_first_fails(tmp_path):
+    bin_dir = tmp_path / "bin"
+    # La URL primaria (GitHub) falla; la alternativa (SourceForge) responde.
+    get = mock.Mock(
+        side_effect=[
+            requests.exceptions.ConnectionError("github down"),
+            FakeResponse(b"7z-fake-archive-bytes"),
+        ]
+    )
+    session = mock.Mock()
+    session.trust_env = True
+    session.get = get
+    with mock.patch(
+        "src.infrastructure.utils.mpv_dll_bootstrap.requests.Session",
+        return_value=session,
+    ), mock.patch(
+        "src.infrastructure.utils.mpv_dll_bootstrap.py7zr.SevenZipFile",
+        FakeSevenZipFile,
+    ):
+        result = ensure_libmpv_dll(bin_dir)
+
+    assert result == bin_dir / "libmpv-2.dll"
+    assert result.read_bytes() == FAKE_DLL_CONTENT
+    # Se intenta la fuente primaria y luego el fallback.
+    assert get.call_count == 2
+    assert get.call_args_list[0].args[0] == MPV_ARCHIVE_URL
+    assert get.call_args_list[1].args[0] == MPV_FALLBACK_URL
+
+
+def test_ensure_v3_downloads_using_v3_urls(tmp_path):
+    bin_dir = tmp_path / "bin-v3"
+    get = mock.Mock(return_value=FakeResponse(b"7z-fake-archive-bytes"))
+    session = mock.Mock()
+    session.trust_env = True
+    session.get = get
+    with mock.patch(
+        "src.infrastructure.utils.mpv_dll_bootstrap.requests.Session",
+        return_value=session,
+    ), mock.patch(
+        "src.infrastructure.utils.mpv_dll_bootstrap.py7zr.SevenZipFile",
+        FakeSevenZipFile,
+    ):
+        result = ensure_libmpv_v3_dll(bin_dir)
+
+    assert result == bin_dir / "libmpv-2.dll"
+    get.assert_called_once_with(MPV_V3_ARCHIVE_URLS[0], stream=True, timeout=120)
 
 
 def test_ensure_raises_bootstrap_error_on_extract_failure(tmp_path):

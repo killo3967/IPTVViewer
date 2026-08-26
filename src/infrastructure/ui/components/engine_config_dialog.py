@@ -38,8 +38,11 @@ class EngineConfigDialog(QDialog):
         engine_group = QGroupBox("Motor Principal")
         engine_layout = QFormLayout(engine_group)
         self.engine_combo = QComboBox()
-        self.engine_combo.addItems(["vlc", "mpv"])
-        self.engine_combo.setCurrentText(self._current_engine)
+        self.engine_combo.addItem("vlc", "vlc")
+        self.engine_combo.addItem("mpv", "mpv")
+        self.engine_combo.addItem("mpv (AVX2)", "mpv-v3")
+        current_idx = self.engine_combo.findData(self._current_engine)
+        self.engine_combo.setCurrentIndex(max(current_idx, 0))
         engine_layout.addRow("Seleccionar motor:", self.engine_combo)
         layout.addWidget(engine_group)
         
@@ -58,7 +61,7 @@ class EngineConfigDialog(QDialog):
         self.tabs.addTab(mpv_tab, "Opciones mpv")
         
         # Seleccionar pestaña según el motor actual
-        if self._current_engine == "mpv":
+        if self._current_engine in ("mpv", "mpv-v3"):
             self.tabs.setCurrentIndex(1)
         
         # --- Botones ---
@@ -184,7 +187,7 @@ class EngineConfigDialog(QDialog):
 
     def get_results(self) -> tuple:
         """Retorna (engine, vlc_config, mpv_config)."""
-        new_engine = self.engine_combo.currentText()
+        new_engine = self.engine_combo.currentData()
         
         vlc_results = self._vlc_config.copy()
         vlc_results.update({

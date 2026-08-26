@@ -1,4 +1,6 @@
 import logging
+import os
+import sys
 
 import requests
 from PyQt6.QtCore import QEvent, QSize, Qt, QTimer, QUrl
@@ -771,8 +773,6 @@ class IPTVMainWindow(QMainWindow):
 
     def _open_engine_options_dialog(self):
         """Abre el diálogo de configuración técnica del motor (VLC y mpv)."""
-        from src.infrastructure.adapters.mpv_player_adapter import MpvPlayerAdapter
-        from src.infrastructure.adapters.vlc_player_adapter import VlcPlayerAdapter
         from src.infrastructure.ui.components.engine_config_dialog import EngineConfigDialog
         
         current_engine = self._config.get('player_engine', 'vlc')
@@ -784,10 +784,9 @@ class IPTVMainWindow(QMainWindow):
         if dialog.exec():
             new_engine, new_vlc_cfg, new_mpv_cfg = dialog.get_results()
 
-            if new_engine == 'mpv':
+            if new_engine in ('mpv', 'mpv-v3'):
                 from src.infrastructure.ui.mpv_bootstrap_dialog import ensure_mpv_engine
                 new_engine = ensure_mpv_engine(new_engine, self)
-            proxy_cfg = self._config.get('proxy_config', {}) # Usar proxy actual
             
             # Persistir cambios en el objeto de config
             self._config['player_engine'] = new_engine
@@ -795,31 +794,43 @@ class IPTVMainWindow(QMainWindow):
             self._config['mpv_config'] = new_mpv_cfg
             
             # Sincronizar ajuste de hardware según motor activo
-            hw_enabled = new_mpv_cfg.get('hw_acceleration') if new_engine == 'mpv' else new_vlc_cfg.get('hw_acceleration')
+            hw_enabled = new_mpv_cfg.get('hw_acceleration') if new_engine in ('mpv', 'mpv-v3') else new_vlc_cfg.get('hw_acceleration')
             self._config['hw_acceleration'] = hw_enabled
             self.hw_on_action.setChecked(hw_enabled)
             self.hw_off_action.setChecked(not hw_enabled)
 
-            # ¿Ha cambiado el motor?
+            # ¿Ha cambiado el motor? libmpv se carga una sola vez por proceso,
+            # así que cambiar de motor (o de variante mpv) exige reiniciar la app.
             if new_engine != current_engine:
-                logging.info(f"Cambiando motor de {current_engine} a {new_engine}")
-                from src.infrastructure.adapters.player_factory import build_player_adapter
+                logging.info(f"Cambiando motor de {current_engine} a {new_engine}: reiniciando...")
+                self._restart_app()
+                return
 
-                new_adapter = build_player_adapter(
-                    new_engine, new_vlc_cfg, new_mpv_cfg, proxy_cfg,
-                    VlcPlayerAdapter, MpvPlayerAdapter,
-                )
-                self._playback_manager.switch_player_engine(new_adapter, int(self.video_widget.winId()))
-            else:
-                # Solo actualizar opciones del motor actual
-                current_cfg = new_mpv_cfg if new_engine == 'mpv' else new_vlc_cfg
-                self._playback_manager.update_engine_options(current_cfg)
+            # Solo actualizar opciones del motor actual (mismo motor).
+            current_cfg = new_mpv_cfg if new_engine in ('mpv', 'mpv-v3') else new_vlc_cfg
+            self._playback_manager.update_engine_options(current_cfg)
 
             if self._save_callback:
                 self._save_callback(self._config)
             
             QMessageBox.information(self, "Reproductor", 
-                                  f"Motor configurado: {new_engine.upper()}.\nConfiguración actualizada y reiniciada.")
+                                  f"Configuración de {new_engine.upper()} actualizada.")
+
+    def _restart_app(self):
+        """Reinicia la app para aplicar un cambio de motor.
+
+        ``libmpv`` se carga una sola vez por proceso, así que cambiar entre las
+        variantes de mpv (genérica/AVX2) o entre motores exige relanzar. Se
+        persiste la configuración y se detiene el proxy Tor antes de relanzar.
+        """
+        if self._save_callback:
+            self._save_callback(self._config)
+        try:
+            from src.infrastructure.utils.proxy import TorpyProxyManager
+            TorpyProxyManager.get_instance().stop()
+        except Exception:
+            logging.exception("No se pudo detener el proxy Tor antes de reiniciar")
+        os.execl(sys.executable, sys.executable, *sys.argv)
 
     def _open_proxy_config_dialog(self):
         """Abre el diálogo de configuración independiente del Proxy."""
@@ -842,7 +853,7 @@ class IPTVMainWindow(QMainWindow):
             from src.infrastructure.adapters.vlc_player_adapter import VlcPlayerAdapter
 
             engine = self._config.get('player_engine', 'vlc')
-            if engine == 'mpv':
+            if engine in ('mpv', 'mpv-v3'):
                 from src.infrastructure.ui.mpv_bootstrap_dialog import ensure_mpv_engine
                 engine = ensure_mpv_engine(engine, self)
             new_adapter = build_player_adapter(

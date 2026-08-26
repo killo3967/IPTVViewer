@@ -14,9 +14,10 @@ class _FakeVlc:
 
 
 class _FakeMpv:
-    def __init__(self, mpv_config=None, proxy_config=None):
+    def __init__(self, mpv_config=None, proxy_config=None, variant=None):
         self.mpv_config = mpv_config
         self.proxy_config = proxy_config
+        self.variant = variant
 
 
 def test_build_player_adapter_creates_vlc_with_normalized_proxy():
@@ -48,8 +49,17 @@ def test_build_player_adapter_creates_mpv_with_normalized_proxy():
 
     assert isinstance(adapter, _FakeMpv)
     assert adapter.mpv_config == {"b": 2}
+    assert adapter.variant == "generic"
     assert adapter.proxy_config["type"] == "socks5"
     assert adapter.proxy_config["server"] == "127.0.0.1"
+
+
+def test_build_player_adapter_creates_mpv_v3_with_variant():
+    adapter = build_player_adapter("mpv-v3", {}, {"b": 2}, {"enabled": False}, _FakeVlc, _FakeMpv)
+
+    assert isinstance(adapter, _FakeMpv)
+    assert adapter.variant == "v3"
+    assert adapter.mpv_config == {"b": 2}
 
 
 def test_build_player_adapter_creates_vlc_with_disabled_proxy():

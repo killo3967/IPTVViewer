@@ -1,9 +1,11 @@
 """Bootstrap de libmpv-2.dll: la descarga en runtime cuando el motor es mpv.
 
-El exe ya no empaqueta la carpeta ``bin/`` (ni ``libmpv-2.dll``): la app la
-descarga la primera vez que se arranca con el motor mpv y la guarda junto al
-ejecutable (``SCRIPT_DIR/bin/libmpv-2.dll``). Versión pineada: release
-``20260814`` de ``shinchiro/mpv-winbuild-cmake``.
+El exe ya no empaqueta las DLLs: la app descarga ``libmpv-2.dll`` en runtime
+y la guarda junto al ejecutable. Hay dos variantes: genérica x86-64 (sin AVX2,
+en ``bin/libmpv-2.dll``) y v3/AVX2 (en ``bin-v3/libmpv-2.dll``). Versión
+pineada: release ``20260814`` de ``shinchiro/mpv-winbuild-cmake``, con fallback
+en el espejo de SourceForge (``mpv-player-windows``, carpeta ``libmpv``) por si
+GitHub poda el release.
 
 El módulo es puro (sin PyQt): la UI solo consume ``ensure_libmpv_dll`` con un
 callback de progreso. ``import mpv`` carga la DLL al importar el módulo, así
@@ -21,10 +23,27 @@ import py7zr
 import requests
 
 MPV_DLL_FILENAME = "libmpv-2.dll"
+# Variante genérica x86-64 (sin AVX2): bin/libmpv-2.dll
 MPV_ARCHIVE_URL = (
     "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260814/"
     "mpv-dev-x86_64-20260814-git-7b8915bc1d.7z"
 )
+MPV_FALLBACK_URL = (
+    "https://sourceforge.net/projects/mpv-player-windows/files/libmpv/"
+    "mpv-dev-x86_64-20260809-git-dd5d17d328.7z/download"
+)
+MPV_ARCHIVE_URLS = (MPV_ARCHIVE_URL, MPV_FALLBACK_URL)
+
+# Variante v3 (AVX2): bin-v3/libmpv-2.dll
+MPV_V3_ARCHIVE_URL = (
+    "https://github.com/shinchiro/mpv-winbuild-cmake/releases/download/20260814/"
+    "mpv-dev-x86_64-v3-20260814-git-7b8915bc1d.7z"
+)
+MPV_V3_FALLBACK_URL = (
+    "https://sourceforge.net/projects/mpv-player-windows/files/libmpv/"
+    "mpv-dev-x86_64-v3-20260809-git-dd5d17d328.7z/download"
+)
+MPV_V3_ARCHIVE_URLS = (MPV_V3_ARCHIVE_URL, MPV_V3_FALLBACK_URL)
 
 _CHUNK_SIZE = 256 * 1024
 _DOWNLOAD_TIMEOUT = 120
@@ -41,15 +60,21 @@ def libmpv_dll_path(bin_dir: Path) -> Path:
     return bin_dir / MPV_DLL_FILENAME
 
 
-def default_bin_dir() -> Path:
-    """Directorio estándar donde se espera ``libmpv-2.dll``.
-
-    En el exe congelado es ``<dir del exe>/bin``; en desarrollo es la raíz del
-    proyecto (``<raiz>/bin``), igual que ``main.SCRIPT_DIR / 'bin'``.
-    """
+def _root_dir() -> Path:
+    """Raíz de la app: dir del exe congelado, o raíz del proyecto en desarrollo."""
     if getattr(sys, 'frozen', False):
-        return Path(sys.executable).parent / 'bin'
-    return Path(__file__).resolve().parent.parent.parent.parent / 'bin'
+        return Path(sys.executable).parent
+    return Path(__file__).resolve().parent.parent.parent.parent
+
+
+def default_bin_dir() -> Path:
+    """Directorio estándar para ``libmpv-2.dll`` (variante genérica, sin AVX2)."""
+    return _root_dir() / 'bin'
+
+
+def default_bin_v3_dir() -> Path:
+    """Directorio para ``libmpv-2.dll`` variante v3 (AVX2)."""
+    return _root_dir() / 'bin-v3'
 
 
 def is_libmpv_available(bin_dir: Path) -> bool:
@@ -61,10 +86,17 @@ def is_libmpv_available(bin_dir: Path) -> bool:
         return False
 
 
+def is_libmpv_v3_available() -> bool:
+    """True si ``bin-v3/libmpv-2.dll`` (variante v3) existe y no está vacía."""
+    return is_libmpv_available(default_bin_v3_dir())
+
+
 def ensure_libmpv_dll(
-    bin_dir: Path, progress: Callable[[int, int], None] | None = None
+    bin_dir: Path,
+    progress: Callable[[int, int], None] | None = None,
+    urls: tuple[str, ...] = MPV_ARCHIVE_URLS,
 ) -> Path:
-    """Garantiza ``bin_dir/libmpv-2.dll`` descargándola si falta.
+    """Garantiza ``bin_dir/libmpv-2.dll`` descargándola desde ``urls`` si falta.
 
     ``progress(downloaded, total)`` se invoca con bytes durante la descarga
     (solo cuando el servidor reporta ``Content-Length``). Lanza
@@ -79,7 +111,7 @@ def ensure_libmpv_dll(
     tmp_dir = Path(tempfile.mkdtemp(prefix="mpv_bootstrap_"))
     tmp_archive = tmp_dir / "libmpv.7z"
     try:
-        _download_archive(tmp_archive, progress)
+        _download_archive(tmp_archive, progress, urls)
         _extract_dll(tmp_archive, tmp_dir)
         shutil.move(str(tmp_dir / MPV_DLL_FILENAME), str(dll_path))
         _logger.info("MPV: %s instalada en %s", MPV_DLL_FILENAME, dll_path)
@@ -94,31 +126,53 @@ def ensure_libmpv_dll(
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def ensure_libmpv_v3_dll(
+    bin_dir: Path | None = None,
+    progress: Callable[[int, int], None] | None = None,
+) -> Path:
+    """Garantiza ``bin-v3/libmpv-2.dll`` (variante v3/AVX2) descargándola si falta."""
+    return ensure_libmpv_dll(
+        bin_dir if bin_dir is not None else default_bin_v3_dir(),
+        progress,
+        MPV_V3_ARCHIVE_URLS,
+    )
+
+
 def _download_archive(
-    tmp_archive: Path, progress: Callable[[int, int], None] | None
+    tmp_archive: Path,
+    progress: Callable[[int, int], None] | None,
+    urls: tuple[str, ...],
 ) -> None:
-    """Descarga el .7z a ``tmp_archive`` reportando progreso por bytes."""
-    try:
-        session = requests.Session()
-        session.trust_env = False  # descarga directa, sin pasar por el proxy configurado
-        with session.get(
-            MPV_ARCHIVE_URL, stream=True, timeout=_DOWNLOAD_TIMEOUT
-        ) as resp:
-            resp.raise_for_status()
-            total = int(resp.headers.get("Content-Length", "0") or 0)
-            downloaded = 0
-            with open(tmp_archive, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=_CHUNK_SIZE):
-                    if not chunk:
-                        continue
-                    f.write(chunk)
-                    downloaded += len(chunk)
-                    if progress is not None and total > 0:
-                        progress(downloaded, total)
-    except requests.RequestException as e:
-        raise MpvDllBootstrapError(
-            f"Fallo al descargar {MPV_DLL_FILENAME} desde {MPV_ARCHIVE_URL}: {e}"
-        ) from e
+    """Descarga el .7z a ``tmp_archive`` con fallback entre fuentes.
+
+    Intenta cada URL de ``urls`` en orden. Si una falla (error de red o HTTP),
+    prueba la siguiente; cada intento trunca el archivo temporal. Lanza
+    ``MpvDllBootstrapError`` si todas las fuentes fallan.
+    """
+    errors: list[str] = []
+    for url in urls:
+        try:
+            session = requests.Session()
+            session.trust_env = False  # descarga directa, sin pasar por el proxy configurado
+            with session.get(url, stream=True, timeout=_DOWNLOAD_TIMEOUT) as resp:
+                resp.raise_for_status()
+                total = int(resp.headers.get("Content-Length", "0") or 0)
+                downloaded = 0
+                with open(tmp_archive, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=_CHUNK_SIZE):
+                        if not chunk:
+                            continue
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if progress is not None and total > 0:
+                            progress(downloaded, total)
+            return
+        except requests.RequestException as e:
+            errors.append(f"{url}: {e}")
+    raise MpvDllBootstrapError(
+        f"Fallo al descargar {MPV_DLL_FILENAME} desde todas las fuentes: "
+        + " | ".join(errors)
+    )
 
 
 def _extract_dll(tmp_archive: Path, dest_dir: Path) -> None:
