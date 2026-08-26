@@ -1,15 +1,15 @@
 name: Build and Release
 
-# Dispara el pipeline al hacer push de un tag de versión (ej. v1.2.3)
-# o manualmente desde la pestaña Actions -> "Run workflow".
-#
-# Nota: libmpv-2.dll ya NO se descarga en CI ni se empaqueta en el exe;
-# la app la descarga en runtime (release 20260814 de shinchiro/mpv-winbuild-cmake).
+# Se dispara con cada push a main: calcula la versión automáticamente, compila
+# el exe, genera el instalador y publica la release. La versión sube sola según
+# los commits desde el último tag:
+#   feat* -> minor | fix*/chore*/etc -> patch | BREAKING CHANGE/feat! -> major
+# Para saltarte una release, incluye "[skip ci]" en el mensaje del commit.
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
@@ -36,19 +38,44 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pyinstaller
 
-      - name: Derive version from tag
+      - name: Derive next version
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          if [ -z "$VERSION" ]; then
-            VERSION="0.0.0"
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          LAST_VER="${LAST_TAG#v}"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${LAST_VER}"
+          MAJOR="${MAJOR:-0}"; MINOR="${MINOR:-0}"; PATCH="${PATCH:-0}"
+
+          COMMITS=$(git log "${LAST_TAG}..HEAD" --pretty=format:%s 2>/dev/null || git log --pretty=format:%s)
+
+          if echo "$COMMITS" | grep -qiE "BREAKING CHANGE|^feat(\(.*\))?!:"; then
+            MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0
+          elif echo "$COMMITS" | grep -qiE "^feat"; then
+            MINOR=$((MINOR + 1)); PATCH=0
+          else
+            PATCH=$((PATCH + 1))
           fi
+
+          VERSION="${MAJOR}.${MINOR}.${PATCH}"
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "Nueva version: v${VERSION}"
+
+      - name: Set app version in source
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, re
+          p = "src/infrastructure/ui/main_window.py"
+          s = open(p, encoding="utf-8").read()
+          new = 'APP_VERSION = "' + os.environ["VERSION"] + '"'
+          s = re.sub(r'APP_VERSION = "[^"]*"', new, s, count=1)
+          open(p, "w", encoding="utf-8").write(s)
+          print("APP_VERSION ->", os.environ["VERSION"])
+          PY
 
       - name: Build executable with PyInstaller
         shell: bash
         run: |
-          export IPTVVIEWER_VERSION="${VERSION}"
           python -m PyInstaller --noconfirm --clean IPTVViewer.spec
           ls -la dist/
 
@@ -69,9 +96,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" \
+          gh release create "v${VERSION}" \
             --repo "${{ github.repository }}" \
-            --title "${{ github.ref_name }}" \
+            --title "v${VERSION}" \
             --generate-notes \
             dist/IPTVViewer.exe \
             dist/IPTVViewer-Setup-*.exe
