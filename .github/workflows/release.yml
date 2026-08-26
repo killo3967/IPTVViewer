@@ -73,6 +73,53 @@ jobs:
           print("APP_VERSION ->", os.environ["VERSION"])
           PY
 
+      - name: Generate release notes
+        shell: bash
+        run: |
+          python - <<'PY'
+          import subprocess, re, collections
+
+          def run(cmd):
+              try:
+                  return subprocess.check_output(cmd, stderr=subprocess.DEVNULL).decode(errors="replace").strip()
+              except subprocess.CalledProcessError:
+                  return ""
+
+          last = run(["git", "describe", "--tags", "--abbrev=0"])
+          commits = run(["git", "log", f"{last}..HEAD", "--pretty=format:%s"]) if last else run(["git", "log", "--pretty=format:%s"])
+
+          groups = collections.OrderedDict([
+              ("Novedades", []),
+              ("Correcciones", []),
+              ("Mantenimiento", []),
+          ])
+          for line in commits.splitlines():
+              s = line.strip()
+              if not s:
+                  continue
+              m = re.match(r"^(feat|fix|perf|chore|docs|ref|refactor|test|build|ci|style)(\([^)]*\))?!?:\s*(.*)$", s, re.I)
+              t = m.group(1).lower() if m else ""
+              subject = m.group(3) if m and m.group(3) else s
+              if t in ("feat", "perf"):
+                  groups["Novedades"].append(subject)
+              elif t == "fix":
+                  groups["Correcciones"].append(subject)
+              else:
+                  groups["Mantenimiento"].append(subject)
+
+          out = []
+          for header, items in groups.items():
+              if items:
+                  out.append(f"## {header}")
+                  out.extend(f"- {it}" for it in items)
+                  out.append("")
+          notes = "\n".join(out).strip()
+          if not notes:
+              notes = "Actualizacion de la aplicacion."
+          open("release_notes.md", "w", encoding="utf-8").write(notes + "\n")
+          print("release_notes.md generado")
+          PY
+
       - name: Build executable with PyInstaller
         shell: bash
         run: |
@@ -99,6 +146,6 @@ jobs:
           gh release create "v${VERSION}" \
             --repo "${{ github.repository }}" \
             --title "v${VERSION}" \
-            --generate-notes \
+            --notes-file release_notes.md \
             dist/IPTVViewer.exe \
             dist/IPTVViewer-Setup-*.exe
