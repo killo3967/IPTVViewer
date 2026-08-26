@@ -100,6 +100,7 @@ jobs:
               m = re.match(r"^(feat|fix|perf|chore|docs|ref|refactor|test|build|ci|style)(\([^)]*\))?!?:\s*(.*)$", s, re.I)
               t = m.group(1).lower() if m else ""
               subject = m.group(3) if m and m.group(3) else s
+              subject = re.sub(r"\s*\[(?:skip ci|ci skip|no ci|skip actions)\]\s*", " ", subject, flags=re.I).strip()
               if t in ("feat", "perf"):
                   groups["Novedades"].append(subject)
               elif t == "fix":
