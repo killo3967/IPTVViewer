@@ -61,7 +61,7 @@ Si el problema persiste, prueba a cambiar de motor (Configuración → Motor act
 ### Carga de EPG
 
 1. `EPGManager.update_epg(url)` → `XMLTVRepository.load_epg(url)`
-2. Descarga XML comprimido (.gz) → parseo → entidades `Program`
+2. Descarga XML comprimido (.gz/.zip/.7z) → parseo → entidades `Program`
 3. Indexado por `channel_id` y nombre normalizado
 4. La UI consulta `get_current_program(channel_id)` para cada canal
 
