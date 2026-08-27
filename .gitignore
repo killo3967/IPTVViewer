@@ -69,6 +69,7 @@ backup/
 
 # Media / streaming binaries and lists (do NOT version)
 bin/
+bin-v3/
 mpv_temp/
 m3u/*.m3u
 m3u/*.m3u8
