@@ -10,9 +10,6 @@ mpv>=1.0
 
 # HTTP / descargas
 requests>=2.28
-# py7zr: extraer libmpv-2.dll del .7z (release 20260814 de mpv-winbuild-cmake)
-# en runtime cuando falta — el exe ya no empaqueta la DLL del motor mpv
-py7zr>=1.1
 
 # Proxy Tor
 torpy>=1.0

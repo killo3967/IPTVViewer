@@ -17,8 +17,9 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-import py7zr
 import requests
+
+from src.infrastructure.utils.sevenzip import extract_7z
 
 VLC_VERSION = "3.0.21"
 VLC_EXE_URL = (
@@ -112,8 +113,7 @@ def install_vlc_portable(
     try:
         _download_archive(tmp_archive, progress)
         dest_root.mkdir(parents=True, exist_ok=True)
-        with py7zr.SevenZipFile(tmp_archive) as archive:
-            archive.extract(path=dest_root)
+        extract_7z(tmp_archive, dest_root)
         extracted = dest_root / VLC_SUBDIR
         _validate_extracted(extracted)
         _logger.info("VLC portátil %s instalado en %s", VLC_VERSION, extracted)

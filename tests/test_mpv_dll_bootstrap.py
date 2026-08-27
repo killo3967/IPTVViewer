@@ -5,8 +5,9 @@ El exe ya no empaqueta libmpv-2.dll; la app la descarga (release pineada
 el motor mpv. El módulo es puro (sin PyQt): el progreso se reporta vía
 callback y el fallo de descarga/extracción lanza ``MpvDllBootstrapError``.
 
-Estos tests NO usan red real ni la DLL real: ``requests.Session``
-(descarga) y ``py7zr.SevenZipFile`` van mockeados.
+Estos tests NO usan red real ni la DLL real: ``requests.Session`` (descarga) y
+``sevenzip.extract_7z`` (extracción) van mockeados. La extracción usa
+tar.exe / 7-Zip porque el .7z usa el filtro BCJ2, que py7zr no soporta.
 """
 
 from pathlib import Path
@@ -26,6 +27,7 @@ from src.infrastructure.utils.mpv_dll_bootstrap import (
     is_libmpv_available,
     libmpv_dll_path,
 )
+from src.infrastructure.utils.sevenzip import SevenZipExtractError
 
 FAKE_DLL_CONTENT = b"fake-libmpv-2.dll"
 
@@ -35,6 +37,12 @@ def _make_dll(bin_dir: Path) -> Path:
     bin_dir.mkdir(parents=True, exist_ok=True)
     dll.write_bytes(FAKE_DLL_CONTENT)
     return dll
+
+
+def _fake_extract_7z(archive, dest_dir, targets=None):
+    """Fake de ``extract_7z``: escribe ``libmpv-2.dll`` en el destino."""
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    (dest_dir / MPV_DLL_FILENAME).write_bytes(FAKE_DLL_CONTENT)
 
 
 class FakeResponse:
@@ -58,20 +66,14 @@ class FakeResponse:
         return False
 
 
-class FakeSevenZipFile:
-    """Fake de ``py7zr.SevenZipFile``: escribe la DLL extraída en el destino."""
-
-    def __init__(self, archive_path):
-        self.archive_path = archive_path
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    def extract(self, path, targets):
-        Path(path, MPV_DLL_FILENAME).write_bytes(FAKE_DLL_CONTENT)
+@pytest.fixture(autouse=True)
+def _no_real_extraction():
+    """Evita que los tests invoquen tar.exe/7z.exe reales."""
+    with mock.patch(
+        "src.infrastructure.utils.mpv_dll_bootstrap.extract_7z",
+        side_effect=SevenZipExtractError("no real extraction in tests"),
+    ):
+        yield
 
 
 # --- is_libmpv_available ---
@@ -110,18 +112,14 @@ def test_ensure_does_not_download_when_dll_exists(tmp_path):
     with mock.patch(
         "src.infrastructure.utils.mpv_dll_bootstrap.requests.Session",
         return_value=session,
-    ), mock.patch(
-        "src.infrastructure.utils.mpv_dll_bootstrap.py7zr.SevenZipFile"
-    ) as sevenzip:
+    ):
         result = ensure_libmpv_dll(tmp_path)
     assert result == libmpv_dll_path(tmp_path)
     get.assert_not_called()
-    sevenzip.assert_not_called()
 
 
 def test_ensure_downloads_extracts_and_moves_dll(tmp_path):
     bin_dir = tmp_path / "bin"  # no existe: hay que crearlo
-    sevenzip_factory = mock.Mock(side_effect=FakeSevenZipFile)
     get = mock.Mock(return_value=FakeResponse(b"7z-fake-archive-bytes"))
     session = mock.Mock()
     session.trust_env = True
@@ -130,18 +128,15 @@ def test_ensure_downloads_extracts_and_moves_dll(tmp_path):
         "src.infrastructure.utils.mpv_dll_bootstrap.requests.Session",
         return_value=session,
     ), mock.patch(
-        "src.infrastructure.utils.mpv_dll_bootstrap.py7zr.SevenZipFile",
-        sevenzip_factory,
-    ):
+        "src.infrastructure.utils.mpv_dll_bootstrap.extract_7z",
+        side_effect=_fake_extract_7z,
+    ) as extract_mock:
         result = ensure_libmpv_dll(bin_dir)
 
     assert result == bin_dir / "libmpv-2.dll"
     assert result.read_bytes() == FAKE_DLL_CONTENT
     get.assert_called_once_with(MPV_ARCHIVE_URL, stream=True, timeout=120)
-    sevenzip_factory.assert_called_once()
-    # El .7z temporal se pasa al extractor y queda eliminado al terminar
-    archive_arg = sevenzip_factory.call_args.args[0]
-    assert archive_arg.exists() is False
+    extract_mock.assert_called_once()
 
 
 def test_ensure_reports_progress(tmp_path):
@@ -155,8 +150,8 @@ def test_ensure_reports_progress(tmp_path):
         "src.infrastructure.utils.mpv_dll_bootstrap.requests.Session",
         return_value=session,
     ), mock.patch(
-        "src.infrastructure.utils.mpv_dll_bootstrap.py7zr.SevenZipFile",
-        FakeSevenZipFile,
+        "src.infrastructure.utils.mpv_dll_bootstrap.extract_7z",
+        side_effect=_fake_extract_7z,
     ):
         ensure_libmpv_dll(tmp_path, progress=lambda d, t: progress_calls.append((d, t)))
 
@@ -177,8 +172,8 @@ def test_ensure_cleans_temporary_directory(tmp_path):
         "src.infrastructure.utils.mpv_dll_bootstrap.requests.Session",
         return_value=session,
     ), mock.patch(
-        "src.infrastructure.utils.mpv_dll_bootstrap.py7zr.SevenZipFile",
-        FakeSevenZipFile,
+        "src.infrastructure.utils.mpv_dll_bootstrap.extract_7z",
+        side_effect=_fake_extract_7z,
     ), mock.patch(
         "src.infrastructure.utils.mpv_dll_bootstrap.tempfile.mkdtemp",
         return_value=str(temp_root),
@@ -216,8 +211,8 @@ def test_ensure_falls_back_to_second_source_when_first_fails(tmp_path):
         "src.infrastructure.utils.mpv_dll_bootstrap.requests.Session",
         return_value=session,
     ), mock.patch(
-        "src.infrastructure.utils.mpv_dll_bootstrap.py7zr.SevenZipFile",
-        FakeSevenZipFile,
+        "src.infrastructure.utils.mpv_dll_bootstrap.extract_7z",
+        side_effect=_fake_extract_7z,
     ):
         result = ensure_libmpv_dll(bin_dir)
 
@@ -239,8 +234,8 @@ def test_ensure_v3_downloads_using_v3_urls(tmp_path):
         "src.infrastructure.utils.mpv_dll_bootstrap.requests.Session",
         return_value=session,
     ), mock.patch(
-        "src.infrastructure.utils.mpv_dll_bootstrap.py7zr.SevenZipFile",
-        FakeSevenZipFile,
+        "src.infrastructure.utils.mpv_dll_bootstrap.extract_7z",
+        side_effect=_fake_extract_7z,
     ):
         result = ensure_libmpv_v3_dll(bin_dir)
 
@@ -249,56 +244,28 @@ def test_ensure_v3_downloads_using_v3_urls(tmp_path):
 
 
 def test_ensure_raises_bootstrap_error_on_extract_failure(tmp_path):
-    class BrokenSevenZip:
-        def __init__(self, archive_path):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            return False
-
-        def extract(self, path, targets):
-            raise ValueError("archivo 7z corrupto")
-
     get = mock.Mock(return_value=FakeResponse(b"7z-fake-archive-bytes"))
     session = mock.Mock()
     session.trust_env = True
     session.get = get
+    # El fixture autouse hace que extract_7z lance SevenZipExtractError.
     with mock.patch(
         "src.infrastructure.utils.mpv_dll_bootstrap.requests.Session",
         return_value=session,
-    ), mock.patch(
-        "src.infrastructure.utils.mpv_dll_bootstrap.py7zr.SevenZipFile",
-        BrokenSevenZip,
     ), pytest.raises(MpvDllBootstrapError):
         ensure_libmpv_dll(tmp_path)
 
 
 def test_ensure_raises_bootstrap_error_when_dll_missing_in_archive(tmp_path):
-    class SevenZipWithoutDll:
-        def __init__(self, archive_path):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            return False
-
-        def extract(self, path, targets):
-            pass  # no extrae nada: el .7z no contenía la DLL
-
     get = mock.Mock(return_value=FakeResponse(b"7z-fake-archive-bytes"))
     session = mock.Mock()
     session.trust_env = True
     session.get = get
+    # extract_7z "sale bien" pero no produce la DLL: el .7z no la contenía.
     with mock.patch(
         "src.infrastructure.utils.mpv_dll_bootstrap.requests.Session",
         return_value=session,
     ), mock.patch(
-        "src.infrastructure.utils.mpv_dll_bootstrap.py7zr.SevenZipFile",
-        SevenZipWithoutDll,
+        "src.infrastructure.utils.mpv_dll_bootstrap.extract_7z"
     ), pytest.raises(MpvDllBootstrapError):
         ensure_libmpv_dll(tmp_path)

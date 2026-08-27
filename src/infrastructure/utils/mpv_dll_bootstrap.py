@@ -19,8 +19,9 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-import py7zr
 import requests
+
+from src.infrastructure.utils.sevenzip import SevenZipExtractError, extract_7z
 
 MPV_DLL_FILENAME = "libmpv-2.dll"
 # Variante genérica x86-64 (sin AVX2): bin/libmpv-2.dll
@@ -176,13 +177,14 @@ def _download_archive(
 
 
 def _extract_dll(tmp_archive: Path, dest_dir: Path) -> None:
-    """Extrae solo ``libmpv-2.dll`` del .7z y valida que salió completa."""
+    """Extrae solo ``libmpv-2.dll`` del .7z y valida que salió completa.
+
+    Los .7z de mpv-winbuild-cmake usan el filtro BCJ2, que py7zr no soporta;
+    la extracción se delega en ``sevenzip.extract_7z`` (tar.exe / 7-Zip).
+    """
     try:
-        with py7zr.SevenZipFile(tmp_archive) as archive:
-            archive.extract(path=dest_dir, targets=[MPV_DLL_FILENAME])
-    except MpvDllBootstrapError:
-        raise
-    except Exception as e:
+        extract_7z(tmp_archive, dest_dir, targets=[MPV_DLL_FILENAME])
+    except SevenZipExtractError as e:
         raise MpvDllBootstrapError(
             f"Fallo al extraer {MPV_DLL_FILENAME} del archivo 7z: {e}"
         ) from e

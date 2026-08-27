@@ -6,7 +6,7 @@ adaptador ``vlc_player_adapter`` cuando VLC no está disponible: el módulo debe
 importarse sin tumbar la app y la instanciación debe fallar limpiamente.
 
 Estos tests NO usan red real ni VLC real: ``requests.Session`` (descarga),
-``py7zr`` y las rutas del sistema van mockeados.
+``sevenzip.extract_7z`` (extracción) y las rutas del sistema van mockeados.
 """
 
 import builtins
@@ -20,6 +20,7 @@ from unittest import mock
 import pytest
 import requests
 
+from src.infrastructure.utils.sevenzip import SevenZipExtractError
 from src.infrastructure.utils.vlc_bootstrap import (
     VLC_7Z_URL,
     VLC_EXE_URL,
@@ -43,11 +44,28 @@ def _clean_vlc_env(monkeypatch):
         monkeypatch.delenv(var, raising=False)
 
 
+@pytest.fixture(autouse=True)
+def _no_real_extraction():
+    """Evita que los tests invoquen tar.exe/7z.exe reales."""
+    with mock.patch(
+        "src.infrastructure.utils.vlc_bootstrap.extract_7z",
+        side_effect=SevenZipExtractError("no real extraction in tests"),
+    ):
+        yield
+
+
 def _make_libvlc(vlc_dir: Path) -> Path:
     dll = vlc_dir / "libvlc.dll"
     vlc_dir.mkdir(parents=True, exist_ok=True)
     dll.write_bytes(FAKE_LIBVLC_CONTENT)
     return dll
+
+
+def _fake_extract_vlc(archive, dest_dir, targets=None):
+    """Fake de ``extract_7z``: extrae ``vlc-3.0.21/libvlc.dll``."""
+    dll = Path(dest_dir) / VLC_SUBDIR / "libvlc.dll"
+    dll.parent.mkdir(parents=True, exist_ok=True)
+    dll.write_bytes(FAKE_LIBVLC_CONTENT)
 
 
 class FakeResponse:
@@ -69,24 +87,6 @@ class FakeResponse:
 
     def __exit__(self, *exc):
         return False
-
-
-class FakeSevenZipFile:
-    """Fake de ``py7zr.SevenZipFile``: extrae ``vlc-3.0.21/libvlc.dll``."""
-
-    def __init__(self, archive_path):
-        self.archive_path = archive_path
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    def extract(self, path, targets=None):
-        dll = Path(path) / VLC_SUBDIR / "libvlc.dll"
-        dll.parent.mkdir(parents=True, exist_ok=True)
-        dll.write_bytes(FAKE_LIBVLC_CONTENT)
 
 
 def _patch_default_dir(tmp_path: Path, name: str = "app"):
@@ -193,8 +193,8 @@ def test_install_portable_downloads_extracts_and_returns_dir(tmp_path):
         "src.infrastructure.utils.vlc_bootstrap.requests.Session",
         return_value=session,
     ), mock.patch(
-        "src.infrastructure.utils.vlc_bootstrap.py7zr.SevenZipFile",
-        FakeSevenZipFile,
+        "src.infrastructure.utils.vlc_bootstrap.extract_7z",
+        side_effect=_fake_extract_vlc,
     ):
         result = install_vlc_portable()
 
@@ -215,8 +215,8 @@ def test_install_portable_reports_progress(tmp_path):
         "src.infrastructure.utils.vlc_bootstrap.requests.Session",
         return_value=session,
     ), mock.patch(
-        "src.infrastructure.utils.vlc_bootstrap.py7zr.SevenZipFile",
-        FakeSevenZipFile,
+        "src.infrastructure.utils.vlc_bootstrap.extract_7z",
+        side_effect=_fake_extract_vlc,
     ):
         install_vlc_portable(progress=lambda d, t: progress_calls.append((d, t)))
 
@@ -239,57 +239,29 @@ def test_install_portable_raises_on_download_failure(tmp_path):
 
 
 def test_install_portable_raises_on_extract_failure(tmp_path):
-    class BrokenSevenZip:
-        def __init__(self, archive_path):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            return False
-
-        def extract(self, path, targets=None):
-            raise ValueError("archivo 7z corrupto")
-
     get = mock.Mock(return_value=FakeResponse(b"7z-fake-archive-bytes"))
     session = mock.Mock()
     session.trust_env = True
     session.get = get
+    # El fixture autouse hace que extract_7z lance SevenZipExtractError.
     with _patch_default_dir(tmp_path), mock.patch(
         "src.infrastructure.utils.vlc_bootstrap.requests.Session",
         return_value=session,
-    ), mock.patch(
-        "src.infrastructure.utils.vlc_bootstrap.py7zr.SevenZipFile",
-        BrokenSevenZip,
     ), pytest.raises(VlcBootstrapError):
         install_vlc_portable()
 
 
 def test_install_portable_raises_when_libvlc_missing_in_archive(tmp_path):
-    class SevenZipWithoutLibvlc:
-        def __init__(self, archive_path):
-            pass
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *exc):
-            return False
-
-        def extract(self, path, targets=None):
-            pass  # el .7z descargado no contenía libvlc.dll
-
     get = mock.Mock(return_value=FakeResponse(b"7z-fake-archive-bytes"))
     session = mock.Mock()
     session.trust_env = True
     session.get = get
+    # extract_7z "sale bien" pero no produce libvlc.dll.
     with _patch_default_dir(tmp_path), mock.patch(
         "src.infrastructure.utils.vlc_bootstrap.requests.Session",
         return_value=session,
     ), mock.patch(
-        "src.infrastructure.utils.vlc_bootstrap.py7zr.SevenZipFile",
-        SevenZipWithoutLibvlc,
+        "src.infrastructure.utils.vlc_bootstrap.extract_7z"
     ), pytest.raises(VlcBootstrapError):
         install_vlc_portable()
 
@@ -309,8 +281,8 @@ def test_install_portable_cleans_temporary_directory(tmp_path):
         "src.infrastructure.utils.vlc_bootstrap.requests.Session",
         return_value=session,
     ), mock.patch(
-        "src.infrastructure.utils.vlc_bootstrap.py7zr.SevenZipFile",
-        FakeSevenZipFile,
+        "src.infrastructure.utils.vlc_bootstrap.extract_7z",
+        side_effect=_fake_extract_vlc,
     ):
         install_vlc_portable()
 
