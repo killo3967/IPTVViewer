@@ -139,6 +139,7 @@ class IPTVMainWindow(QMainWindow):
         self._config = config
         self._save_callback = save_callback
         self._last_playlist = Playlist() # Caché de la última lista cargada
+        self._logo_rows: dict[str, list[int]] = {}  # URL -> filas que usan ese logo
 
         # Estado de sesión (no persistido)
         self._fullscreen_active = False
@@ -890,6 +891,7 @@ class IPTVMainWindow(QMainWindow):
 
     def _fill_table(self, playlist):
         self.table.setRowCount(len(playlist))
+        self._logo_rows = {}
         for row, channel in enumerate(playlist):
             # Nombre
             self.table.setItem(row, 0, QTableWidgetItem(channel.name))
@@ -899,6 +901,7 @@ class IPTVMainWindow(QMainWindow):
             logo_item.setData(Qt.ItemDataRole.UserRole, channel)
             self.table.setItem(row, 1, logo_item)
             if channel.logo_url:
+                self._logo_rows.setdefault(channel.logo_url, []).append(row)
                 self._logo_loader.get_logo(channel.logo_url)
             
             # EPG (Programación)
@@ -933,14 +936,12 @@ class IPTVMainWindow(QMainWindow):
             self._playback_manager.play_channel(channel)
 
     def _on_logo_loaded(self, url: str, pixmap: QPixmap):
-        """Actualiza todas las filas que usen este logo."""
+        """Actualiza solo las filas que usan este logo (índice inverso O(1))."""
         icon = QIcon(pixmap)
-        for row in range(self.table.rowCount()):
+        for row in self._logo_rows.get(url, []):
             item = self.table.item(row, 1)
             if item is not None:
-                channel = item.data(Qt.ItemDataRole.UserRole)
-                if channel and channel.logo_url == url:
-                    item.setIcon(icon)
+                item.setIcon(icon)
 
 
     def _show_about(self):
