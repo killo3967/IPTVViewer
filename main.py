@@ -244,6 +244,10 @@ def main():
     # 2. Inicializar Qt
     app = QApplication(sys.argv)
 
+    # Redirigir los mensajes de Qt (ruido de red/imagen) al logging de la app
+    from src.infrastructure.utils.qt_logging import install_qt_message_handler
+    install_qt_message_handler()
+
     # 3. Asegurar los motores mpv al arrancar (descarga si falta, independiente del motor activo)
     from src.infrastructure.ui.mpv_bootstrap_dialog import (
         ensure_mpv_available,
