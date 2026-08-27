@@ -13,6 +13,7 @@ from PyQt6.QtGui import (
     QShortcut,
 )
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QApplication,
     QDialog,
     QDialogButtonBox,
@@ -210,6 +211,10 @@ class IPTVMainWindow(QMainWindow):
         self.table.setColumnWidth(1, 120)
         self.table.verticalHeader().setDefaultSectionSize(90)
         self.table.setIconSize(self.table.iconSize().expandedTo(QSize(100, 75)))
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        # Quitar el indicador de foco (barra azul) del estilo nativo Windows 11
+        self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.table.setStyleSheet("QTableWidget::item:selected { background-color: #2f5f8f; color: white; }")
         self.table.itemClicked.connect(self._on_item_clicked)
         splitter.addWidget(self.table)
         
@@ -889,15 +894,21 @@ class IPTVMainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error EPG", f"No se pudo cargar la EPG: {e}")
 
+    def _make_item(self, text: str = "") -> QTableWidgetItem:
+        """Crea un item no editable (evita el cursor de edición al hacer clic)."""
+        item = QTableWidgetItem(text)
+        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        return item
+
     def _fill_table(self, playlist):
         self.table.setRowCount(len(playlist))
         self._logo_rows = {}
         for row, channel in enumerate(playlist):
             # Nombre
-            self.table.setItem(row, 0, QTableWidgetItem(channel.name))
+            self.table.setItem(row, 0, self._make_item(channel.name))
             
             # Logo
-            logo_item = QTableWidgetItem()
+            logo_item = self._make_item()
             logo_item.setData(Qt.ItemDataRole.UserRole, channel)
             self.table.setItem(row, 1, logo_item)
             if channel.logo_url:
@@ -905,7 +916,7 @@ class IPTVMainWindow(QMainWindow):
                 self._logo_loader.get_logo(channel.logo_url)
             
             # EPG (Programación)
-            epg_item = QTableWidgetItem("Cargando guía...")
+            epg_item = self._make_item("Cargando guía...")
             self.table.setItem(row, 2, epg_item)
         
         # Actualizar visualización de EPG inmediatamente
