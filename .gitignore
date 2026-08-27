@@ -60,6 +60,7 @@ venv.bak/
 # Local config (use config.ini.example as template)
 config.ini
 config.ini.bak
+config.ini.orig
 
 # Runtime-generated data
 logs/
