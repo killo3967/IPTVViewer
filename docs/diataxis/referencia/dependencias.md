@@ -27,8 +27,13 @@
 
 | Componente | Ubicación | Obligatorio |
 |---|---|---|
-| `libmpv-2.dll` (y `mpv-1.dll`) | `bin/` | ✅ Solo para motor MPV |
-| VLC (sistema) | Instalación estándar | ✅ Solo para motor VLC |
+| `libmpv-2.dll` (genérica) | `bin/` (descargada en runtime) | ✅ Solo para motor MPV |
+| `libmpv-2.dll` (AVX2/v3) | `bin-v3/` (descargada en runtime) | ❌ Opcional (CPU con AVX2) |
+| VLC portátil 3.0.21 | `vlc/` (descargado en runtime) | ❌ Solo si no hay VLC instalado |
+
+> Ninguna DLL de motor se empaqueta con el ejecutable: se descargan en runtime y
+> se extraen con `tar.exe` de Windows o 7-Zip (módulo `sevenzip.py`). El filtro
+> BCJ2 de los `.7z` de mpv-winbuild-cmake obligó a abandonar `py7zr`.
 
 ---
 
@@ -45,6 +50,6 @@
 
 ## Notas
 
-- El binding `mpv` se importa dinámicamente dentro de `mpv_player_adapter.py`; requiere `libmpv-2.dll` en `bin/`.
+- El binding `mpv` se importa dinámicamente dentro de `mpv_player_adapter.py`; requiere `libmpv-2.dll` en `bin/` (o `bin-v3/`), descargada en runtime por `mpv_dll_bootstrap.py`.
 - `PySocks` se importa dinámicamente desde `urllib3.contrib.socks`; por eso el spec de PyInstaller lo declara en `hiddenimports` (BUG-01).
-- En el `.exe` empaquetado, `bin/` y `resources/` se incluyen como datos de PyInstaller (ver `IPTVViewer.spec`).
+- En el `.exe` empaquetado solo se incluye `resources/` como dato de PyInstaller (ver `IPTVViewer.spec`); las DLLs de motor se descargan en runtime.

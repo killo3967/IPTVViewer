@@ -57,11 +57,16 @@ Implementa **cómo** se conecta el sistema al mundo exterior.
 | Adaptador | Implementa | Detalle |
 |---|---|---|
 | `VlcPlayerAdapter` | `IPlayer` | Motor VLC con autorreconexión, proxy, HW accel |
-| `MpvPlayerAdapter` | `IPlayer` | Motor MPV con libmpv.dll, reconexión por idle |
+| `MpvPlayerAdapter` | `IPlayer` | Motor MPV con libmpv-2.dll, reconexión por idle |
 | `FileM3URepository` | `IPlaylistRepository` | Carga M3U desde archivo local o URL remota |
 | `XMLTVRepository` | `IEPGRepository` | Descarga y parsea XMLTV (comprimido .gz) |
 | `QtLogoLoaderAdapter` | — | Carga asíncrona de logos con QPixmapCache |
 | `TorpyProxyManager` | — | Proxy Tor interno (torpy) con renovación de identidad |
+
+> **Bootstrap de motores**: las DLLs no se empaquetan. `mpv_dll_bootstrap.py` y
+> `vlc_bootstrap.py` las descargan en runtime (`bin/`, `bin-v3/`, `vlc/`) y
+> `sevenzip.py` las extrae con `tar.exe` de Windows o 7-Zip (soportan el filtro
+> BCJ2 que `py7zr` no maneja).
 
 ---
 

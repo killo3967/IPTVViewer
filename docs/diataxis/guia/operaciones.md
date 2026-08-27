@@ -48,11 +48,11 @@ Si el problema persiste, prueba a cambiar de motor (Configuración → Motor act
 2. Verifica que el puerto 9050 está libre
 3. Usa el botón **Probar conexión** en Configuración → Proxy para verificar
 
-### Error al cargar libmpv.dll
+### Error al cargar libmpv-2.dll
 
-- Confirma que `bin/libmpv-2.dll` existe
-- Si usas otra versión de mpv, renómbrala a `libmpv-2.dll`
-- Alternativa: instala mpv desde [mpv.io](https://mpv.io/installation/) y copia la DLL
+- La DLL se descarga automáticamente en runtime; si falla, revisa `logs/iptv_viewer.log` (errores `MPV: fallo al descargar`).
+- La extracción usa `tar.exe` de Windows o 7-Zip (`sevenzip.py`); si ambos faltan, instala 7-Zip.
+- Verifica `bin/libmpv-2.dll` (genérica) o `bin-v3/libmpv-2.dll` (AVX2) tras arrancar con motor mpv.
 
 ---
 
