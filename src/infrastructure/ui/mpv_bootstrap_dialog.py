@@ -58,9 +58,10 @@ def _download_mpv_dialog(parent=None, variant: str = "generic") -> str | None:
         _logger.error("MPV: fallo al descargar libmpv-2.dll: %s", e)
         error_msg = str(e)
     finally:
+        canceled = dialog.wasCanceled()
         dialog.close()
 
-    if dialog.wasCanceled():
+    if canceled:
         return "Descarga cancelada."
     return error_msg
 
