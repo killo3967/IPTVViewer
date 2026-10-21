@@ -8,6 +8,7 @@ from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkReques
 
 MAX_CONCURRENT_LOGOS = 4
 LOGO_CACHE_TTL_SECONDS = 30 * 24 * 3600  # 30 días
+FAILED_RETRY_SECONDS = 60 * 60  # 1 hora (caché negativa de URLs rotas)
 
 
 class QtLogoLoaderAdapter(QObject):
@@ -29,6 +30,8 @@ class QtLogoLoaderAdapter(QObject):
         self._pending: list[str] = []
         self._active: set[str] = set()
         self._queued: set[str] = set()
+        # Caché negativa: URLs que fallaron y no se reintentan hasta que expire el TTL.
+        self._failed: dict[str, float] = {}
 
     def _get_cache_path(self, url: str) -> Path:
         """Genera una ruta única en disco basada en el hash de la URL."""
@@ -54,7 +57,16 @@ class QtLogoLoaderAdapter(QObject):
                 self.logo_loaded.emit(url, pixmap)
                 return
 
-        # 3. Encolar (evita duplicados en cola o en descarga activa)
+        # 3. Caché negativa: no reintentar URLs que fallaron hace poco.
+        #    Los CDNs de logos IPTV suelen estar rotos; reintentarlos en cada
+        #    re-render de la tabla genera cientos de conexiones SSL abortadas
+        #    ("QSslSocket: device not open", errores HTTP/2).
+        failed_at = self._failed.get(url)
+        if failed_at is not None and time.time() - failed_at < FAILED_RETRY_SECONDS:
+            return
+        self._failed.pop(url, None)
+
+        # 4. Encolar (evita duplicados en cola o en descarga activa)
         if url in self._queued or url in self._active:
             return
         self._queued.add(url)
@@ -79,6 +91,11 @@ class QtLogoLoaderAdapter(QObject):
             request = QNetworkRequest(QUrl(url))
             # Algunos servidores requieren User-Agent para servir imágenes
             request.setHeader(QNetworkRequest.KnownHeaders.UserAgentHeader, "IPTVViewer/1.0")
+            # HTTP/2 de Qt falla con muchos CDNs de IPTV ("HTTP/2 protocol error",
+            # "Too many redirects" y sockets SSL abortados). Forzamos HTTP/1.1.
+            request.setAttribute(
+                QNetworkRequest.Attribute.Http2AllowedAttribute, False
+            )
             reply = self._nam.get(request)
             reply.finished.connect(
                 lambda r=reply, u=url, p=cache_path: self._handle_response(r, u, p)
@@ -103,7 +120,14 @@ class QtLogoLoaderAdapter(QObject):
 
                     # Guardar en memoria para esta sesión
                     self._memory_cache[url] = pixmap
+                    self._failed.pop(url, None)
                     self.logo_loaded.emit(url, pixmap)
+                else:
+                    # La respuesta llegó pero no es una imagen válida.
+                    self._failed[url] = time.time()
+            else:
+                # Error de red/HTTP: cachear el fallo para no repetir la descarga.
+                self._failed[url] = time.time()
         finally:
             reply.deleteLater()
             self._process_queue()

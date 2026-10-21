@@ -6,8 +6,10 @@ from pathlib import Path
 from unittest import mock
 
 from PyQt6.QtGui import QColor, QImage
+from PyQt6.QtNetwork import QNetworkReply, QNetworkRequest
 
 from src.infrastructure.adapters.qt_logo_loader_adapter import (
+    FAILED_RETRY_SECONDS,
     LOGO_CACHE_TTL_SECONDS,
     MAX_CONCURRENT_LOGOS,
     QtLogoLoaderAdapter,
@@ -71,3 +73,47 @@ def test_get_logo_redownloads_stale_disk_cache(qtbot, tmp_path):
     loader.get_logo("http://x/logo.png")
 
     assert loader._nam.get.call_count == 1
+
+
+def _make_error_reply() -> mock.Mock:
+    reply = mock.Mock()
+    reply.error.return_value = QNetworkReply.NetworkError.HostNotFoundError
+    return reply
+
+
+def test_failed_logo_not_retried_within_ttl(qtbot, tmp_path):
+    """Un logo que falla no se vuelve a pedir en la misma sesión (caché negativa)."""
+    loader = _make_loader(tmp_path)
+    url = "http://x/broken.png"
+
+    loader.get_logo(url)
+    reply = loader._nam.get.return_value
+    loader._handle_response(reply, url, loader._get_cache_path(url))
+    assert loader._nam.get.call_count == 1
+
+    loader.get_logo(url)  # re-render de la tabla: no debe re-descargar
+
+    assert loader._nam.get.call_count == 1
+
+
+def test_failed_logo_retried_after_ttl(qtbot, tmp_path):
+    loader = _make_loader(tmp_path)
+    url = "http://x/broken.png"
+    loader._failed[url] = time.time() - FAILED_RETRY_SECONDS - 1
+
+    loader.get_logo(url)
+
+    assert loader._nam.get.call_count == 1
+
+
+def test_request_disables_http2(qtbot, tmp_path):
+    """Los CDNs de logos IPTV rompen con HTTP/2: se fuerza HTTP/1.1."""
+    loader = _make_loader(tmp_path)
+
+    loader.get_logo("http://x/logo.png")
+
+    request = loader._nam.get.call_args[0][0]
+    assert (
+        request.attribute(QNetworkRequest.Attribute.Http2AllowedAttribute)
+        is False
+    )

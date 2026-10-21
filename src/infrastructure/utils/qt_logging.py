@@ -48,8 +48,9 @@ def _is_noise(category: str, message: str) -> bool:
     )
 
 
-def _handler(msg_type: QtMsgType, context: QMessageLogContext, message: str) -> None:
+def _handler(msg_type: QtMsgType, context: QMessageLogContext, message: str | None) -> None:
     category = context.category or "default"
+    message = message or ""
     level = classify_qt_message(msg_type, category, message)
     _LOGGER.log(level, "Qt [%s] %s", category, message)
 
