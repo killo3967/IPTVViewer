@@ -5,15 +5,9 @@ player_engine = mpv
 
 [source.0]
 name = TV España
-m3u = http://TU_SERVIDOR:34400/m3u/xteve.m3u
+m3u = https://github.com/coderfast/IPTV/blob/main/playlistEspana.m3u
 filter = SPAIN
-epg = http://TU_SERVIDOR:34400/xmltv/xteve.xml
-
-[source.1]
-name = Pluto TV
-m3u = 
-filter = 
-epg = 
+epg = http://tropical.jungle-team.online/epg/koala7.xml.gz
 
 [VLC]
 reset_plugins_cache = False

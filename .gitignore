@@ -90,3 +90,5 @@ m3u/*.xmltv
 # OS
 .DS_Store
 Thumbs.db
+.agent/fsm-state.json
+.github/context-mode/

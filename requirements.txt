@@ -11,6 +11,9 @@ mpv>=1.0
 # HTTP / descargas
 requests>=2.28
 
+# Diagnóstico de puertos (identificar proceso que ocupa el puerto del servicio web)
+psutil>=5.9
+
 # Proxy Tor
 torpy>=1.0
 # PySocks: requerido por requests/urllib3 para consumir proxies SOCKS5
