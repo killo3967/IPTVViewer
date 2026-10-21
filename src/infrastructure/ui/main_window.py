@@ -50,7 +50,7 @@ from src.infrastructure.adapters.qt_logo_loader_adapter import QtLogoLoaderAdapt
 from src.infrastructure.ui.components.epg_grid import EPGGridDialog
 from src.infrastructure.ui.components.pip_window import PIPWindow
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.7.0"
 
 MIT_LICENSE_TEXT = """MIT License
 
