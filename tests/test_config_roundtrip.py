@@ -75,3 +75,30 @@ def test_splitter_state_with_base64_alphabet_survives(tmp_path):
     loaded = load_config(path)
 
     assert loaded["splitter_state"] == "A+/7/w=="
+
+
+def test_epg_show_title_only_survives_round_trip(tmp_path):
+    path = tmp_path / "config.ini"
+    config = {
+        "sources": {0: {"name": "Lista 1", "m3u": "http://x/m3u", "filter": "", "epg": ""}},
+        "active": 0,
+        "hw_acceleration": False,
+        "player_engine": "vlc",
+        "vlc_config": {},
+        "mpv_config": {},
+        "proxy_config": {},
+        "epg_show_title_only": False,
+    }
+
+    save_config(config, path)
+    loaded = load_config(path)
+
+    assert loaded["epg_show_title_only"] is False
+
+
+def test_epg_show_title_only_defaults_to_only_title(tmp_path):
+    """Sin la clave en config.ini se asume "solo título" (True)."""
+    path = tmp_path / "config.ini"
+    _write_ini(path, {"player_engine": "vlc", "active": "0"})
+
+    assert load_config(path)["epg_show_title_only"] is True

@@ -7,6 +7,7 @@ un stub-recorder para ``EPGGridDialog``.
 """
 import os
 import time
+from datetime import datetime, timedelta
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -70,16 +71,29 @@ class FakePlaybackManager:
 
 
 class FakeEPGManager:
-    """Sin datos de programación."""
+    """Devuelve siempre el mismo programa (o nada) y cuenta las consultas."""
 
-    def __init__(self):
-        self.has_data = False
+    def __init__(self, program=None):
+        self.has_data = program is not None
+        self.program = program
+        self.calls = 0
 
     def get_currently_airing(self, tvg_id: str, channel_name: str = ""):
-        return None
+        self.calls += 1
+        return self.program
 
     def update_epg(self, source):
         pass
+
+
+class FakeProgram:
+    """Programa mínimo que consume la columna Programación."""
+
+    def __init__(self, title: str = "Telediario", start=None, end=None):
+        self.title = title
+        self.description = ""
+        self.start_time = start or (datetime.now() - timedelta(minutes=30))
+        self.end_time = end or (datetime.now() + timedelta(minutes=30))
 
 
 class FakeLogoLoader(QObject):
@@ -111,6 +125,7 @@ def make_config(**overrides) -> dict:
         "view_mode": "normal",
         "splitter_state": "",
         "pip_geometry": "",
+        "epg_show_title_only": True,
     }
     config.update(overrides)
     return config
@@ -142,13 +157,14 @@ def _pump_events(seconds: float):
         time.sleep(0.01)
 
 
-def make_window(config: dict | None = None, channels=None, save_callback=None, playback_manager=None):
+def make_window(config: dict | None = None, channels=None, save_callback=None,
+               playback_manager=None, epg_manager=None):
     """Construye IPTVMainWindow inyectando fakes."""
     if config is None:
         config = make_config()
     playlist = Playlist(channels if channels is not None else make_channels())
     playlist_loader = FakePlaylistLoader(playlist)
-    epg_manager = FakeEPGManager()
+    epg_manager = epg_manager or FakeEPGManager()
     logo_loader = FakeLogoLoader()
     if playback_manager is None:
         playback_manager = FakePlaybackManager()
@@ -1299,3 +1315,136 @@ def test_audio_keys_forwarded_from_pip(qtbot):
     QApplication.sendEvent(window, event)
     assert window._muted is True
     assert playback.mute_calls[-1] is True
+
+
+# ---------------------------------------------------------------------------
+# Columna Programación: sin prefijo NOW, barra de progreso y configuración EPG
+# ---------------------------------------------------------------------------
+
+def test_epg_column_has_no_now_prefix(qtbot):
+    """La celda guarda ProgramInfo y no escribe "NOW: ..." como texto."""
+    from src.infrastructure.ui.components.epg_program_delegate import (
+        EPG_PROGRAM_ROLE,
+        ProgramInfo,
+    )
+
+    window, _ = make_window(epg_manager=FakeEPGManager(program=FakeProgram()))
+    qtbot.addWidget(window)
+
+    item = window.table.item(0, 2)
+    assert item.text() == ""
+    info = item.data(EPG_PROGRAM_ROLE)
+    assert isinstance(info, ProgramInfo)
+    assert info.title == "Telediario"
+
+
+def test_epg_column_without_program_shows_placeholder(qtbot):
+    from src.infrastructure.ui.components.epg_program_delegate import EPG_PROGRAM_ROLE
+
+    window, _ = make_window()
+    qtbot.addWidget(window)
+
+    item = window.table.item(0, 2)
+    assert item.text() == "Guía no disponible"
+    assert item.data(EPG_PROGRAM_ROLE) is None
+
+
+def test_epg_title_only_setting_is_applied_to_delegate(qtbot):
+    window, _ = make_window(config=make_config(epg_show_title_only=False))
+    qtbot.addWidget(window)
+
+    assert window._epg_delegate.title_only is False
+    assert window._epg_show_title_only is False
+
+
+def test_epg_title_only_defaults_to_true(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+
+    assert window._epg_delegate.title_only is True
+
+
+def test_epg_config_dialog_action_persists_and_applies(qtbot, monkeypatch):
+    """Configuración → Configuración de EPG guarda la casilla y repinta la tabla."""
+    from PyQt6.QtWidgets import QDialog
+
+    import src.infrastructure.ui.main_window as mw_module
+
+    saved = []
+    window, _ = make_window(
+        epg_manager=FakeEPGManager(program=FakeProgram()),
+        save_callback=lambda cfg: saved.append(dict(cfg)),
+    )
+    qtbot.addWidget(window)
+
+    monkeypatch.setattr(mw_module.EPGConfigDialog, "exec",
+                        lambda self: QDialog.DialogCode.Accepted)
+    monkeypatch.setattr(mw_module.EPGConfigDialog, "title_only", lambda self: False)
+
+    window._open_epg_config_dialog()
+
+    assert window._config["epg_show_title_only"] is False
+    assert window._epg_delegate.title_only is False
+    assert saved and saved[-1]["epg_show_title_only"] is False
+
+
+def test_epg_config_dialog_cancel_keeps_setting(qtbot, monkeypatch):
+    from PyQt6.QtWidgets import QDialog
+
+    import src.infrastructure.ui.main_window as mw_module
+
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    monkeypatch.setattr(mw_module.EPGConfigDialog, "exec",
+                        lambda self: QDialog.DialogCode.Rejected)
+
+    window._open_epg_config_dialog()
+
+    assert window._config["epg_show_title_only"] is True
+
+
+def test_visible_rows_refresh_does_not_touch_hidden_rows(qtbot):
+    """El refresco periódico recalcula solo las filas visibles."""
+    channels = [
+        Channel(name=f"c{i}", url=f"http://test/{i}", group="SPAIN") for i in range(40)
+    ]
+    epg = FakeEPGManager(program=FakeProgram())
+    window, _ = make_window(channels=channels, epg_manager=epg)
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    visible = list(window._visible_rows())
+    assert 0 < len(visible) < len(channels)
+
+    epg.calls = 0
+    window._refresh_epg_display()
+    assert epg.calls == len(visible)
+
+    epg.calls = 0
+    window._refresh_epg_display(visible_only=False)
+    assert epg.calls == len(channels)
+
+
+def test_epg_refresh_after_scroll_updates_new_visible_rows(qtbot):
+    """Tras mover el scroll, el refresco alcanza las filas recién visibles."""
+    from src.infrastructure.ui.components.epg_program_delegate import EPG_PROGRAM_ROLE
+
+    channels = [
+        Channel(name=f"c{i}", url=f"http://test/{i}", group="SPAIN") for i in range(40)
+    ]
+    epg = FakeEPGManager(program=FakeProgram())
+    window, _ = make_window(channels=channels, epg_manager=epg)
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    window.table.scrollToBottom()
+    QApplication.processEvents()
+    epg.calls = 0
+    window._arm_epg_refresh()
+    _pump_events(0.3)
+
+    assert epg.calls > 0
+    for row in window._visible_rows():
+        assert window.table.item(row, 2).data(EPG_PROGRAM_ROLE) is not None

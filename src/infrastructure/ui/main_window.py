@@ -47,10 +47,16 @@ from src.application.services.view_mode_controller import (
 from src.domain.entities.channel import Channel
 from src.domain.entities.playlist import Playlist
 from src.infrastructure.adapters.qt_logo_loader_adapter import QtLogoLoaderAdapter
+from src.infrastructure.ui.components.epg_config_dialog import EPGConfigDialog
 from src.infrastructure.ui.components.epg_grid import EPGGridDialog
+from src.infrastructure.ui.components.epg_program_delegate import (
+    EPG_PROGRAM_ROLE,
+    EPGProgramDelegate,
+    ProgramInfo,
+)
 from src.infrastructure.ui.components.pip_window import PIPWindow
 
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.8.0"
 
 MIT_LICENSE_TEXT = """MIT License
 
@@ -155,6 +161,8 @@ class IPTVMainWindow(QMainWindow):
         self._pre_fullscreen_mode: ViewMode | None = None
         self._muted = False
         self._volume = 100
+        self._epg_show_title_only = bool(self._config.get('epg_show_title_only', True))
+        self._epg_scroll_timer: QTimer | None = None
 
         # UI Initialization
         self.setWindowTitle("IPTV Viewer – Arquitectura Hexagonal")
@@ -185,7 +193,7 @@ class IPTVMainWindow(QMainWindow):
         # Timer para actualizar EPG cada minuto
         self._epg_timer = QTimer(self)
         self._epg_timer.timeout.connect(self._refresh_epg_display)
-        self._epg_timer.start(60000) # 60 segundos
+        self._epg_timer.start(30000)  # 30 s: la barra de progreso avanza de forma perceptible
         
         # Connect logo loader
         self._logo_loader.logo_loaded.connect(self._on_logo_loaded)
@@ -218,6 +226,10 @@ class IPTVMainWindow(QMainWindow):
         self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.table.setStyleSheet("QTableWidget::item:selected { background-color: #2f5f8f; color: white; }")
         self.table.itemClicked.connect(self._on_item_clicked)
+        self._epg_delegate = EPGProgramDelegate(self.table)
+        self._epg_delegate.set_title_only(self._epg_show_title_only)
+        self.table.setItemDelegateForColumn(2, self._epg_delegate)
+        self.table.verticalScrollBar().valueChanged.connect(self._arm_epg_refresh)
         splitter.addWidget(self.table)
         
         # Video
@@ -659,6 +671,9 @@ class IPTVMainWindow(QMainWindow):
         proxy_action = config_menu.addAction("Configuración de &Proxy...")
         proxy_action.triggered.connect(self._open_proxy_config_dialog)
 
+        epg_action = config_menu.addAction("Configuración de &EPG...")
+        epg_action.triggered.connect(self._open_epg_config_dialog)
+
         # Menú Ayuda
         help_menu = menubar.addMenu("Ay&uda")
 
@@ -1004,25 +1019,85 @@ class IPTVMainWindow(QMainWindow):
             epg_item = self._make_item("Cargando guía...")
             self.table.setItem(row, 2, epg_item)
         
-        # Actualizar visualización de EPG inmediatamente
-        self._refresh_epg_display()
+        # Actualizar visualización de EPG inmediatamente (todas las filas)
+        self._refresh_epg_display(visible_only=False)
 
-    def _refresh_epg_display(self):
-        """Actualiza la columna de programación actual para cada canal."""
-        for row in range(self.table.rowCount()):
-            item = self.table.item(row, 1)
-            channel = item.data(Qt.ItemDataRole.UserRole)
-            if not channel:
-                continue
-                
+    def _open_epg_config_dialog(self):
+        """Abre el diálogo de configuración de la EPG y aplica el cambio."""
+        dialog = EPGConfigDialog(self._epg_show_title_only, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        title_only = dialog.title_only()
+        self._config['epg_show_title_only'] = title_only
+        if self._save_callback:
+            self._save_callback(self._config)
+
+        logging.info(f"Usuario cambia configuración de EPG: solo título={title_only}")
+        self._apply_epg_title_only(title_only)
+
+    def _apply_epg_title_only(self, title_only: bool):
+        """Aplica el modo "solo título" y repinta la columna Programación."""
+        self._epg_show_title_only = title_only
+        self._epg_delegate.set_title_only(title_only)
+        self._refresh_epg_display(visible_only=False)
+
+    def _arm_epg_refresh(self):
+        """Programa un refresco de la columna Programación tras moverse por la tabla."""
+        if self._epg_scroll_timer is None:
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.setInterval(120)
+            timer.timeout.connect(self._refresh_epg_display)
+            self._epg_scroll_timer = timer
+        self._epg_scroll_timer.start()
+
+    def _visible_rows(self) -> range:
+        """Filas visibles ahora mismo (todas si la tabla aún no tiene layout)."""
+        row_count = self.table.rowCount()
+        if row_count == 0:
+            return range(0)
+        first = self.table.rowAt(0)
+        last = self.table.rowAt(max(0, self.table.viewport().height() - 1))
+        if first < 0 or last < 0:
+            return range(row_count)
+        return range(first, last + 1)
+
+    def _refresh_epg_display(self, visible_only: bool = True):
+        """Actualiza la columna de programación con el programa en curso.
+
+        Por defecto solo recalcula las filas visibles. El porcentaje de la barra
+        se calcula al pintar (ver ``EPGProgramDelegate``), así que repintar el
+        viewport basta para que todas las barras visibles avancen.
+        """
+        rows = self._visible_rows() if visible_only else range(self.table.rowCount())
+        for row in rows:
+            self._refresh_epg_row(row)
+        self.table.viewport().update()
+
+    def _refresh_epg_row(self, row: int):
+        """Fija en la fila el programa en curso (o "Guía no disponible")."""
+        channel_item = self.table.item(row, 1)
+        epg_item = self.table.item(row, 2)
+        if channel_item is None or epg_item is None:
+            return
+
+        channel = channel_item.data(Qt.ItemDataRole.UserRole)
+        program = None
+        if channel is not None:
             program = self._epg_manager.get_currently_airing(channel.tvg_id, channel.name)
-            if program:
-                text = f"NOW: {program.title}"
-                if program.description:
-                    text += f"\n({program.description[:50]}...)"
-                self.table.item(row, 2).setText(text)
-            else:
-                self.table.item(row, 2).setText("Guía no disponible")
+
+        if program is None:
+            epg_item.setData(EPG_PROGRAM_ROLE, None)
+            epg_item.setText("Guía no disponible")
+            return
+
+        epg_item.setData(EPG_PROGRAM_ROLE, ProgramInfo(
+            title=program.title,
+            start=program.start_time,
+            end=program.end_time,
+        ))
+        epg_item.setText("")
 
     def _on_item_clicked(self, item: QTableWidgetItem):
         row = item.row()

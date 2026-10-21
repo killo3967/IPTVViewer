@@ -2,6 +2,7 @@
 active = 0
 hw_acceleration = True
 player_engine = mpv
+epg_show_title_only = True
 
 [source.0]
 name = TV España

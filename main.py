@@ -193,6 +193,7 @@ def load_config(config_path=None):
         'proxy_config': proxy_config,
         'view_mode': ViewMode.parse(parser.get('SETTINGS', 'view_mode', fallback='')).value,
         'splitter_state': parser.get('SETTINGS', 'splitter_state', fallback=''),
+        'epg_show_title_only': parser.getboolean('SETTINGS', 'epg_show_title_only', fallback=True),
         'pip_geometry': parser.get('SETTINGS', 'pip_geometry', fallback=''),
     }
 
@@ -230,6 +231,7 @@ def save_config(config_data, config_path=None):
         'view_mode': config_data.get('view_mode', 'normal'),
         'splitter_state': config_data.get('splitter_state', ''),
         'pip_geometry': config_data.get('pip_geometry', ''),
+        'epg_show_title_only': str(config_data.get('epg_show_title_only', True)),
     }
 
     # Fuentes M3U (con nombre)

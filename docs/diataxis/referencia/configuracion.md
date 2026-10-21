@@ -11,6 +11,7 @@
 | `active` | int | `0` | Índice de la fuente activa |
 | `hw_acceleration` | bool | `False` | Aceleración hardware global |
 | `player_engine` | `vlc` \| `mpv` | `mpv` | Motor de reproducción activo |
+| `epg_show_title_only` | bool | `True` | En la columna Programación mostrar solo el título del programa (sin horas, barra de progreso ni duración) |
 
 ---
 
@@ -31,6 +32,7 @@ Ejemplo:
 active = 0
 hw_acceleration = True
 player_engine = mpv
+epg_show_title_only = True
 
 [source.0]
 name = TV España
