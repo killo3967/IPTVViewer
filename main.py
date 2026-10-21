@@ -46,6 +46,29 @@ def setup_logger():
     )
     logging.info(f"\n{'='*60}\nNUEVA SESIÓN: {datetime.now()}\n{'='*60}")
 
+def _configure_tls_backend():
+    r"""Fuerza el backend TLS nativo de Windows (Schannel) para Qt.
+
+    Qt prefiere OpenSSL si consigue cargarlo y, en un .exe congelado, acaba
+    usando el ``libcrypto-3-x64.dll`` de ``C:\Windows\System32`` (el OpenSSL
+    que Windows trae para OpenSSH). Con ese binario el handshake TLS revienta
+    con 0xC0000005 dentro de ntdll y la app se cierra sin mensaje al cargar
+    logos ``https://``. Schannel usa la API nativa de Windows: no hay DLL de
+    terceros que cargar. Debe llamarse después de crear ``QApplication`` y
+    antes de la primera conexión TLS.
+    """
+    if not sys.platform.startswith('win'):
+        return
+    from PyQt6.QtNetwork import QSslSocket
+
+    try:
+        QSslSocket.setActiveBackend('schannel')
+    except Exception as exc:
+        logging.error(f"TLS: no se pudo activar Schannel: {exc}")
+        return
+    logging.info(f"Backend TLS de Qt: {QSslSocket.activeBackend()}")
+
+
 def load_config(config_path=None):
     """Carga configuración .ini con soporte para formato antiguo (migración automática)."""
     path = config_path or CONFIG_FILE
@@ -243,6 +266,7 @@ def main():
 
     # 2. Inicializar Qt
     app = QApplication(sys.argv)
+    _configure_tls_backend()
 
     # Redirigir los mensajes de Qt (ruido de red/imagen) al logging de la app
     from src.infrastructure.utils.qt_logging import install_qt_message_handler

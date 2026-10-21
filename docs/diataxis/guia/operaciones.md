@@ -54,6 +54,14 @@ Si el problema persiste, prueba a cambiar de motor (Configuración → Motor act
 - La extracción usa `tar.exe` de Windows o 7-Zip (`sevenzip.py`); si ambos faltan, instala 7-Zip.
 - Verifica `bin/libmpv-2.dll` (genérica) o `bin-v3/libmpv-2.dll` (AVX2) tras arrancar con motor mpv.
 
+### La aplicación se cierra sola al cargar una lista
+
+Síntoma: la lista se carga, aparecen canales y el proceso termina sin mensaje. En el Visor de eventos aparece `IPTVViewer.exe`, módulo `ntdll.dll`, excepción `0xC0000005`.
+
+Causa: al descargar logos `https://`, Qt negocia TLS y carga la OpenSSL de `C:\Windows\System32` (`libcrypto-3-x64.dll`, build de OpenSSH). Esa combinación revienta el proceso; con listas cuyos logos son todos `http://` no ocurre.
+
+Solución: forzar el backend TLS nativo (`QT_TLS_BACKEND=schannel`, ya fijado en `main.py`). Comprobación del fallo: una lista cuyas entradas con `tvg-logo="https://..."` cierran la app, y la misma lista sin esos logos arranca bien.
+
 ---
 
 ## Flujo de datos

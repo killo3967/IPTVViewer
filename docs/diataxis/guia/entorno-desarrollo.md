@@ -106,3 +106,4 @@ Para generar el ejecutable standalone:
 - El `.exe` resultante (~183 MB) es autónomo; no requiere Python instalado. VLC sigue siendo externo para el motor VLC.
 - `libmpv-2.dll` no se empaqueta: se descarga en runtime y se extrae con `tar.exe` de Windows o 7-Zip.
 - En modo congelado, `config.ini` y `logs/` se crean junto al `.exe` (`SCRIPT_DIR = Path(sys.executable).parent`).
+- **TLS con Schannel**: `main.py` fija `QT_TLS_BACKEND=schannel` en Windows para que Qt use la API nativa. Si Qt carga OpenSSL, en Windows 11 acaba usando el `libcrypto-3-x64.dll` de `C:\Windows\System32` (build de OpenSSH) y el proceso muere con `0xC0000005` al negociar TLS con los logos `https://`.
