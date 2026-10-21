@@ -6,6 +6,8 @@ from src.domain.ports.i_player import IPlayer
 class FakePlayer(IPlayer):
     def __init__(self):
         self.calls = []
+        # El adaptador real expone este callback (hilo de VLC).
+        self.on_retry_exhausted = None
 
     def play(self, url):
         self.calls.append(f"play:{url}")
@@ -101,3 +103,34 @@ def test_switch_player_engine_reapplies_audio_state():
 
     assert "set_muted:True" in new_player.calls
     assert "set_volume:40" in new_player.calls
+
+def test_retry_exhausted_reports_current_channel():
+    player = FakePlayer()
+    manager = PlaybackManager(player)
+    channel = Channel(name="Cine", url="http://example.test/cine")
+    manager.play_channel(channel)
+    failed = []
+    manager.on_playback_failed = failed.append
+
+    assert player.on_retry_exhausted is not None
+    player.on_retry_exhausted()
+
+    assert failed == [channel]
+
+
+def test_retry_exhausted_without_callback_does_not_raise():
+    player = FakePlayer()
+    manager = PlaybackManager(player)
+    manager.play_channel(Channel(name="Cine", url="http://example.test/cine"))
+
+    player.on_retry_exhausted()  # sin on_playback_failed registrado
+
+
+def test_switch_player_engine_rewires_retry_callback():
+    first = FakePlayer()
+    second = FakePlayer()
+    manager = PlaybackManager(first)
+
+    manager.switch_player_engine(second, 123)
+
+    assert second.on_retry_exhausted == manager._handle_retry_exhausted

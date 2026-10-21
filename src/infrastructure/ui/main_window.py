@@ -3,7 +3,7 @@ import os
 import sys
 
 import requests
-from PyQt6.QtCore import QEvent, QSize, Qt, QTimer, QUrl
+from PyQt6.QtCore import QEvent, QSize, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import (
     QActionGroup,
     QDesktopServices,
@@ -56,7 +56,7 @@ from src.infrastructure.ui.components.epg_program_delegate import (
 )
 from src.infrastructure.ui.components.pip_window import PIPWindow
 
-APP_VERSION = "1.8.0"
+APP_VERSION = "1.8.1"
 
 MIT_LICENSE_TEXT = """MIT License
 
@@ -130,6 +130,9 @@ class SourceEditorDialog(QDialog):
 
 class IPTVMainWindow(QMainWindow):
     """Interfaz gráfica principal refactorizada según Arquitectura Hexagonal."""
+
+    #: Emitida (desde el hilo de VLC) cuando un canal agota los reintentos.
+    playback_failed = pyqtSignal(str)
     
     def __init__(self, 
                  playlist_loader: PlaylistLoader, 
@@ -141,6 +144,9 @@ class IPTVMainWindow(QMainWindow):
         super().__init__()
         self._playlist_loader = playlist_loader
         self._playback_manager = playback_manager
+        self.playback_failed.connect(self._on_playback_failed)
+        if hasattr(self._playback_manager, "on_playback_failed"):
+            self._playback_manager.on_playback_failed = self._notify_playback_failed
         self._epg_manager = epg_manager
         self._logo_loader = logo_loader
         self._config = config
@@ -547,7 +553,20 @@ class IPTVMainWindow(QMainWindow):
         """Muestra el nombre del canal actual en un OSD durante 2 s."""
         channel = self._playback_manager.current_channel
         name = channel.name if isinstance(channel, Channel) else ""
-        self._channel_overlay.setText(name)
+        self._show_overlay(name)
+
+    def _notify_playback_failed(self, channel):
+        """Callback del PlaybackManager; puede llegar desde el hilo de VLC."""
+        name = channel.name if isinstance(channel, Channel) else ""
+        self.playback_failed.emit(name)
+
+    def _on_playback_failed(self, name: str):
+        """Avisa en el OSD de que el canal no se puede reproducir."""
+        self._show_overlay(f"Sin señal: {name}" if name else "Sin señal")
+
+    def _show_overlay(self, text: str):
+        """Muestra un texto en el OSD del vídeo durante 2 s."""
+        self._channel_overlay.setText(text)
         self._channel_overlay.adjustSize()
         x = (self.video_widget.width() - self._channel_overlay.width()) // 2
         y = self.video_widget.height() - self._channel_overlay.height() - 40

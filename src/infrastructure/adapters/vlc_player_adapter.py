@@ -1,5 +1,7 @@
 import logging
 import sys
+import threading
+from collections.abc import Callable
 from typing import Any, ClassVar
 
 from src.domain.ports.i_player import IPlayer
@@ -48,6 +50,21 @@ class VlcPlayerAdapter(IPlayer):
         "logfile": "logs/vlc.log",
         "hw_acceleration": False,
     }
+
+    # Autorreconexión: backoff exponencial con tope para no reintentar
+    # un canal caído de forma indefinida (spam de log, hilos y CPU).
+    RETRY_MAX_ATTEMPTS = 6
+    RETRY_BASE_DELAY = 1.0   # segundos tras un error de reproducción
+    RETRY_MAX_DELAY = 10.0   # tope del backoff
+    EOF_BASE_DELAY = 0.2     # reconexión casi inmediata tras un fin de stream
+
+    # Estado de reintentos: también como valor de clase para tolerar
+    # instancias creadas sin __init__ (tests) y reinicios del motor.
+    _retry_count: int = 0
+    _retry_token: int = 0
+    _retry_timer: threading.Timer | None = None
+    #: Aviso opcional (sin Qt) cuando se agotan los reintentos.
+    on_retry_exhausted: Callable[[], None] | None = None
 
     def __init__(self, vlc_config: dict | None = None, proxy_config: dict | None = None):
         """
@@ -158,28 +175,87 @@ class VlcPlayerAdapter(IPlayer):
         events = self._player.event_manager()
         events.event_attach(vlc.EventType.MediaPlayerEndReached, self._on_end_reached)
         events.event_attach(vlc.EventType.MediaPlayerEncounteredError, self._on_error_encountered)
+        playing = getattr(vlc.EventType, "MediaPlayerPlaying", None)
+        if playing is not None:
+            events.event_attach(playing, self._on_playing)
 
         # Re-asociar ventana si existe
         if self._window_id:
             self.set_output_window(self._window_id)
 
     def _on_end_reached(self, event):
-        """Callback cuando VLC detecta fin de flujo."""
-        if self._current_url:
-            logging.warning("VLC: Fin de stream (EOF) detectado. Reintentando inmediatamente...")
-            import threading
-
-            # Reducido a 200ms para una reconexión casi instantánea
-            threading.Timer(0.2, self.play, args=[self._current_url]).start()
+        """Callback cuando VLC detecta fin de flujo (EOF)."""
+        self._schedule_retry(self.EOF_BASE_DELAY, "Fin de stream (EOF)")
 
     def _on_error_encountered(self, event):
-        """Callback cuando hay un error de reproducción."""
-        logging.error("VLC: Error de reproducción. Reintentando...")
-        if self._current_url:
-            import threading
+        """Callback cuando VLC no consigue reproducir el canal."""
+        self._schedule_retry(self.RETRY_BASE_DELAY, "Error de reproducción")
 
-            # Reducido a 500ms para errores de red
-            threading.Timer(0.5, self.play, args=[self._current_url]).start()
+    def _on_playing(self, event):
+        """Si el stream arranca, se reinicia el contador de reintentos."""
+        if self._retry_count:
+            logging.info("VLC: reproducción recuperada tras %d reintento(s).", self._retry_count)
+        self._retry_count = 0
+        self._cancel_retry()
+
+    def _cancel_retry(self):
+        """Cancela el reintento programado, si lo hay."""
+        if self._retry_timer is not None:
+            self._retry_timer.cancel()
+            self._retry_timer = None
+
+    def _schedule_retry(self, base_delay: float, reason: str):
+        """Programa un reintento con backoff exponencial y tope de intentos.
+
+        Antes se reintentaba cada 500 ms sin límite: un canal caído generaba
+        miles de líneas de log, acumulaba hilos y gastaba CPU indefinidamente.
+        """
+        url = self._current_url
+        if not url:
+            return
+
+        self._retry_count += 1
+        if self._retry_count > self.RETRY_MAX_ATTEMPTS:
+            logging.error(
+                "VLC: %s. Reintentos agotados (%d) para %s",
+                reason,
+                self.RETRY_MAX_ATTEMPTS,
+                url,
+            )
+            self._retry_count = 0
+            self._cancel_retry()
+            self._notify_retry_exhausted()
+            return
+
+        delay = min(self.RETRY_MAX_DELAY, base_delay * (2 ** (self._retry_count - 1)))
+        logging.warning(
+            "VLC: %s. Reintento %d/%d en %.1f s",
+            reason,
+            self._retry_count,
+            self.RETRY_MAX_ATTEMPTS,
+            delay,
+        )
+        self._cancel_retry()
+        timer = threading.Timer(delay, self._retry_play, args=[self._retry_token, url])
+        timer.daemon = True
+        self._retry_timer = timer
+        timer.start()
+
+    def _retry_play(self, token: int, url: str):
+        """Reintenta solo si el canal y el motor siguen siendo los mismos."""
+        if token != self._retry_token or url != self._current_url or not self._player:
+            return
+        self._play_url(url)
+
+    def _notify_retry_exhausted(self):
+        """Avisa (una sola vez) de que el canal no se puede reproducir."""
+        callback = self.on_retry_exhausted
+        if callback is None:
+            return
+        try:
+            callback()
+        except Exception:  # el aviso nunca debe tumbar el motor
+            logging.debug("VLC: falló el aviso de reintentos agotados.", exc_info=True)
 
     def update_engine_options(self, new_config: dict):
         """Actualiza la configuración y reinicia la instancia de VLC."""
@@ -195,7 +271,14 @@ class VlcPlayerAdapter(IPlayer):
         self._init_vlc()
 
     def play(self, url: str):
-        """Implementa el inicio de reproducción con VLC."""
+        """Inicia la reproducción y reinicia el estado de reintentos."""
+        self._retry_count = 0
+        self._retry_token += 1
+        self._cancel_retry()
+        self._play_url(url)
+
+    def _play_url(self, url: str):
+        """Reproduce ``url`` sin tocar el contador de reintentos."""
         if not self._player or not url:
             return
 
@@ -226,7 +309,10 @@ class VlcPlayerAdapter(IPlayer):
         self._player.play()
 
     def stop(self):
-        """Detiene el reproductor VLC."""
+        """Detiene la reproducción y cancela los reintentos pendientes."""
+        self._retry_count = 0
+        self._retry_token += 1
+        self._cancel_retry()
         if self._player:
             self._player.stop()
 
@@ -262,6 +348,9 @@ class VlcPlayerAdapter(IPlayer):
 
     def release(self):
         """Libera recursos de VLC."""
+        self._retry_token += 1
+        self._retry_count = 0
+        self._cancel_retry()
         if self._player:
             try:
                 self._player.stop()

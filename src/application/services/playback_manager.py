@@ -1,3 +1,6 @@
+import logging
+from collections.abc import Callable
+
 from src.domain.entities.channel import Channel
 from src.domain.ports.i_player import IPlayer
 
@@ -10,6 +13,25 @@ class PlaybackManager:
         self._current_channel: Channel | None = None
         self._muted: bool = False
         self._volume: int = 100
+        #: Aviso a la UI cuando el motor agota los reintentos de un canal.
+        self.on_playback_failed: Callable[[Channel | None], None] | None = None
+        self._wire_retry_callback()
+
+    def _wire_retry_callback(self):
+        """Conecta el aviso de "reintentos agotados" del motor, si lo soporta."""
+        if hasattr(self._player, "on_retry_exhausted"):
+            self._player.on_retry_exhausted = self._handle_retry_exhausted
+
+    def _handle_retry_exhausted(self):
+        """Traduce el aviso del motor (hilo de VLC) a un callback de la app."""
+        channel = self._current_channel
+        logging.warning(
+            "Playback: sin señal tras agotar reintentos (%s)",
+            getattr(channel, "name", "canal desconocido"),
+        )
+        callback = self.on_playback_failed
+        if callback is not None:
+            callback(channel)
 
     def play_channel(self, channel: Channel):
         """Inicia la reproducción de un canal específico."""
@@ -52,6 +74,7 @@ class PlaybackManager:
 
         self._player = new_player
         self._player.set_output_window(window_id)
+        self._wire_retry_callback()
         # Re-aplicar el estado de audio vigente para que el cambio de
         # motor no altere lo que oye el usuario.
         self._player.set_muted(self._muted)

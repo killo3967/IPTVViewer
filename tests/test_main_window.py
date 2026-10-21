@@ -1448,3 +1448,24 @@ def test_epg_refresh_after_scroll_updates_new_visible_rows(qtbot):
     assert epg.calls > 0
     for row in window._visible_rows():
         assert window.table.item(row, 2).data(EPG_PROGRAM_ROLE) is not None
+
+def test_playback_failed_signal_shows_overlay(qtbot):
+    """El aviso de "sin señal" llega a la UI como OSD."""
+    window, _ = make_window()
+    qtbot.addWidget(window)
+
+    window.playback_failed.emit("LA 1")
+    QApplication.processEvents()
+
+    assert window._channel_overlay.text() == "Sin señal: LA 1"
+
+
+def test_notify_playback_failed_emits_channel_name(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    received = []
+    window.playback_failed.connect(received.append)
+
+    window._notify_playback_failed(Channel(name="LA 2", url="http://test/la2"))
+
+    assert received == ["LA 2"]
