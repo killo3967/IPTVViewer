@@ -241,6 +241,25 @@ class VlcPlayerAdapter(IPlayer):
         else:
             self._player.set_xwindow(window_id)
 
+    def set_muted(self, enabled: bool):
+        """Silencia (True) o restaura el audio del motor VLC."""
+        if not self._player:
+            return
+        try:
+            self._player.audio_set_mute(bool(enabled))
+        except (AttributeError, OSError, RuntimeError):
+            pass
+
+    def set_volume(self, level: int):
+        """Ajusta el volumen VLC en el rango 0-100."""
+        if not self._player:
+            return
+        clamped = max(0, min(100, int(level)))
+        try:
+            self._player.audio_set_volume(clamped)
+        except (AttributeError, OSError, RuntimeError):
+            pass
+
     def release(self):
         """Libera recursos de VLC."""
         if self._player:

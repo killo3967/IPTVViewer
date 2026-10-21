@@ -22,6 +22,12 @@ class FakePlayer(IPlayer):
     def update_engine_options(self, options):
         self.calls.append(f"update_engine_options:{options}")
 
+    def set_muted(self, enabled):
+        self.calls.append(f"set_muted:{enabled}")
+
+    def set_volume(self, level):
+        self.calls.append(f"set_volume:{level}")
+
     def release(self):
         self.calls.append("release")
 
@@ -61,7 +67,37 @@ def test_switch_player_engine_releases_old_player_and_resumes_current_channel():
     assert old_player.calls[-2:] == ["stop", "release"]
     assert new_player.calls == [
         "set_output_window:12345",
+        "set_muted:False",
+        "set_volume:100",
         "stop",
         "play:http://example.test/movies.m3u8",
     ]
     assert manager.current_channel == channel
+
+def test_set_muted_delegates_to_player():
+    player = FakePlayer()
+    manager = PlaybackManager(player)
+
+    manager.set_muted(True)
+
+    assert player.calls == ["set_muted:True"]
+
+def test_set_volume_delegates_to_player():
+    player = FakePlayer()
+    manager = PlaybackManager(player)
+
+    manager.set_volume(70)
+
+    assert player.calls == ["set_volume:70"]
+
+def test_switch_player_engine_reapplies_audio_state():
+    old_player = FakePlayer()
+    new_player = FakePlayer()
+    manager = PlaybackManager(old_player)
+    manager.set_muted(True)
+    manager.set_volume(40)
+
+    manager.switch_player_engine(new_player, window_id=1)
+
+    assert "set_muted:True" in new_player.calls
+    assert "set_volume:40" in new_player.calls

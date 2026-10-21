@@ -52,9 +52,14 @@ class PIPWindow(QWidget):
     # la usa para persistir pip_geometry con debounce (REQ-8 / WU 4.3).
     geometry_changed = pyqtSignal()
 
-    def __init__(self, key_forward_target: QWidget):
+    # Emitida cuando el usuario cierra la ventana por via nativa
+    # (Alt+F4, gestor de ventanas): la principal la trata como
+    # _close_pip para no quedarse oculta para siempre.
+    closed = pyqtSignal()
+
+    def __init__(self, key_forward_target: QWidget, parent: QWidget | None = None):
         super().__init__(
-            key_forward_target,
+            parent,
             Qt.WindowType.Tool
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint,
@@ -114,6 +119,11 @@ class PIPWindow(QWidget):
         self._drag_start_global = None
         self._drag_start_pos = None
         event.accept()
+
+    def closeEvent(self, event):
+        """Notifica el cierre nativo (hide() NO dispara closeEvent)."""
+        self.closed.emit()
+        super().closeEvent(event)
 
     def keyPressEvent(self, event):
         """Reenvía todas las teclas a la ventana principal (REQ-6)."""

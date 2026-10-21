@@ -21,6 +21,14 @@ class IPlayer(ABC):
         """Activa o desactiva la aceleración por hardware (requiere reinicio interno)."""
 
     @abstractmethod
+    def set_muted(self, enabled: bool):
+        """Silencia (True) o restaura el audio (False)."""
+
+    @abstractmethod
+    def set_volume(self, level: int):
+        """Ajusta el volumen en el rango 0-100."""
+
+    @abstractmethod
     def update_engine_options(self, options: dict):
         """Actualiza la configuración técnica del motor (requiere reinicio interno)."""
 

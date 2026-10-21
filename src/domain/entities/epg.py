@@ -30,6 +30,7 @@ class EPGData:
     """Agregado que gestiona la colección de programas."""
     def __init__(self, programs: list[Program] | None = None, channel_names: dict[str, str] | None = None):
         self._programs = programs or []
+        self._channel_names: dict[str, str] = dict(channel_names or {})
         # Mapa de channel_id -> nombre normalizado (opcional, para ayudar al matching)
         self._channel_id_to_normalized_name = {
             cid: normalize_name(name) for cid, name in (channel_names or {}).items()
@@ -84,3 +85,13 @@ class EPGData:
     @property
     def programs(self) -> list[Program]:
         return list(self._programs)
+
+    @property
+    def channel_names(self) -> dict[str, str]:
+        """Copia del mapa channel_id -> nombre mostrado del XMLTV."""
+        return dict(self._channel_names)
+
+    def programs_by_channel_ids(self) -> list[str]:
+        """Channel-ids distintos presentes en la EPG (con o sin programas)."""
+        ids = set(self._programs_by_channel) | set(self._channel_names)
+        return sorted(ids)

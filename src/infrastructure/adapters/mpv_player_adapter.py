@@ -240,6 +240,25 @@ class MpvPlayerAdapter(IPlayer):
         if self._player:
             self._player.wid = str(window_id)
 
+    def set_muted(self, enabled: bool):
+        """Silencia (True) o restaura el audio del motor mpv."""
+        if not self._player:
+            return
+        try:
+            self._player.mute = bool(enabled)
+        except (AttributeError, RuntimeError, TypeError):
+            pass
+
+    def set_volume(self, level: int):
+        """Ajusta el volumen mpv en el rango 0-100."""
+        if not self._player:
+            return
+        clamped = max(0, min(100, int(level)))
+        try:
+            self._player.volume = clamped
+        except (AttributeError, RuntimeError, TypeError):
+            pass
+
     def set_hw_acceleration(self, enabled: bool):
         """Cambia la aceleración hardware y reinicia."""
         if self._config.get("hw_acceleration") == enabled:

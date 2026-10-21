@@ -40,6 +40,8 @@ class FakePlaybackManager:
         self.initialize_calls = []
         self.stop_calls = []
         self.current_channel = None
+        self.mute_calls = []
+        self.volume_calls = []
 
     def play_channel(self, channel):
         self.play_calls.append(channel)
@@ -59,6 +61,12 @@ class FakePlaybackManager:
 
     def update_engine_options(self, options):
         pass
+
+    def set_muted(self, enabled):
+        self.mute_calls.append(enabled)
+
+    def set_volume(self, level):
+        self.volume_calls.append(level)
 
 
 class FakeEPGManager:
@@ -926,6 +934,65 @@ def test_pip_key_forward_zap_down(qtbot):
     assert playback.play_calls == [channels[1]]
 
 
+def test_opening_pip_hides_main_window(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_P)
+
+    assert window._pip_open is True
+    assert not window.isVisible()
+    assert window._pip_window.isVisible()
+
+
+def test_closing_pip_restores_main_window(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_P)
+    assert not window.isVisible()
+
+    qtbot.keyClick(window._pip_window, Qt.Key.Key_P)
+
+    assert window._pip_open is False
+    assert window.isVisible()
+
+
+def test_pip_native_close_via_closed_signal_restores_main(qtbot):
+    # Alt+F4 sobre el PIP emite closed (closeEvent); la principal
+    # debe restaurarse en vez de quedar oculta para siempre.
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_P)
+    assert not window.isVisible()
+
+    window._pip_window.close()
+
+    assert window._pip_open is False
+    assert window.isVisible()
+
+
+def test_pip_window_is_top_level(qtbot):
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+
+    qtbot.keyClick(window, Qt.Key.Key_P)
+
+    pip = window._pip_window
+    assert pip.parent() is None
+    assert pip.isVisible()
+    assert window.isVisible() is False or pip.parent() is not window
+
+
 def test_pip_key_forward_p_toggles_pip_closed(qtbot):
     window, _ = make_window()
     qtbot.addWidget(window)
@@ -1157,3 +1224,78 @@ def test_help_actions_open_dialogs(qtbot, monkeypatch):
     assert "Atajos de teclado" in titles
     assert "Licencia" in titles
 
+
+
+def test_ctrl_s_toggles_mute(qtbot):
+    window, playback = make_window()
+    qtbot.addWidget(window)
+
+    qtbot.keyClick(window, Qt.Key.Key_S, Qt.KeyboardModifier.ControlModifier)
+    assert window._muted is True
+    assert playback.mute_calls[-1] is True
+
+    qtbot.keyClick(window, Qt.Key.Key_S, Qt.KeyboardModifier.ControlModifier)
+    assert window._muted is False
+    assert playback.mute_calls[-1] is False
+
+
+def test_shift_up_down_changes_volume_with_clamping(qtbot):
+    window, playback = make_window()
+    qtbot.addWidget(window)
+
+    window._volume = 95  # partir bajo el techo
+    qtbot.keyClick(window, Qt.Key.Key_Up, Qt.KeyboardModifier.ShiftModifier)
+    assert window._volume == 100
+    qtbot.keyClick(window, Qt.Key.Key_Down, Qt.KeyboardModifier.ShiftModifier)
+    qtbot.keyClick(window, Qt.Key.Key_Down, Qt.KeyboardModifier.ShiftModifier)
+    assert window._volume == 90
+    assert playback.volume_calls == [100, 95, 90]
+
+
+def test_volume_clamped_at_bounds(qtbot):
+    window, _playback = make_window()
+
+    for _ in range(3):
+        qtbot.keyClick(window, Qt.Key.Key_Down, Qt.KeyboardModifier.ShiftModifier)
+    assert window._volume == 85
+    for _ in range(50):
+        qtbot.keyClick(window, Qt.Key.Key_Down, Qt.KeyboardModifier.ShiftModifier)
+    assert window._volume == 0
+    qtbot.keyClick(window, Qt.Key.Key_Down, Qt.KeyboardModifier.ShiftModifier)
+    assert window._volume == 0
+    for _ in range(50):
+        qtbot.keyClick(window, Qt.Key.Key_Up, Qt.KeyboardModifier.ShiftModifier)
+    assert window._volume == 100
+    qtbot.keyClick(window, Qt.Key.Key_Up, Qt.KeyboardModifier.ShiftModifier)
+    assert window._volume == 100
+
+
+def test_plain_arrows_still_zap_with_shift_variant(qtbot):
+    """Shift+Down ajusta volumen (no zapea); Down plano sigue zapeando."""
+    channels = make_channels()
+    window, playback = make_window(channels=channels)
+    qtbot.addWidget(window)
+    window.show()
+    QApplication.processEvents()
+    playback.current_channel = channels[0]
+    window._volume = 100
+
+    qtbot.keyClick(window, Qt.Key.Key_Down, Qt.KeyboardModifier.ShiftModifier)
+    assert playback.play_calls == []
+    assert playback.volume_calls == [95]
+
+    qtbot.keyClick(window, Qt.Key.Key_Down)
+    assert playback.play_calls == [channels[1]]
+
+
+def test_audio_keys_forwarded_from_pip(qtbot):
+    """Ctrl+S reenviado desde el PIP silencia igual que el atajo local."""
+    window, playback = make_window()
+    qtbot.addWidget(window)
+    from PyQt6.QtCore import QEvent
+    from PyQt6.QtGui import QKeyEvent
+    event = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_S,
+                      Qt.KeyboardModifier.ControlModifier)
+    QApplication.sendEvent(window, event)
+    assert window._muted is True
+    assert playback.mute_calls[-1] is True

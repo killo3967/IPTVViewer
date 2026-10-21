@@ -153,6 +153,8 @@ class IPTVMainWindow(QMainWindow):
         self._pip_geometry_save_timer: QTimer | None = None
         self._overlay_timer: QTimer | None = None
         self._pre_fullscreen_mode: ViewMode | None = None
+        self._muted = False
+        self._volume = 100
 
         # UI Initialization
         self.setWindowTitle("IPTV Viewer – Arquitectura Hexagonal")
@@ -348,14 +350,59 @@ class IPTVMainWindow(QMainWindow):
         QShortcut(QKeySequence("Alt+3"), self, activated=lambda: self._view_controller.activate(ViewMode.VIDEO))
         QShortcut(QKeySequence("Alt+4"), self, activated=self._toggle_pip)
         QShortcut(QKeySequence("P"), self, activated=self._toggle_pip)
-        QShortcut(QKeySequence("Up"), self, activated=lambda: self._zap(-1))
-        QShortcut(QKeySequence("Down"), self, activated=lambda: self._zap(+1))
+        # ↑/↓ sin Shift zapean; con Shift ajustan volumen. Qt matchea Shift+Down
+        # contra el atajo plano "Down" (los modificadores no anulan el match),
+        # asi que la distincion se hace en el handler via modifiers.
+        QShortcut(QKeySequence("Up"), self, activated=self._on_up_key)
+        QShortcut(QKeySequence("Down"), self, activated=self._on_down_key)
         QShortcut(QKeySequence("F"), self, activated=self._toggle_fullscreen)
         QShortcut(QKeySequence("Esc"), self, activated=self._exit_fullscreen)
         # Ctrl+G debe funcionar con la barra de menús oculta (REQ-9): el atajo
         # del QAction muere al ocultar el menú, así que se registra a nivel
         # de ventana y se dispara la misma acción (nunca deshabilitada).
         QShortcut(QKeySequence("Ctrl+G"), self, activated=self.view_epg_action.trigger)
+        QShortcut(QKeySequence("Ctrl+S"), self, activated=self._toggle_mute)
+
+    def keyPressEvent(self, event):
+        """Gestiona teclas reenviadas desde el PIP (REQ-6).
+
+        Con la ventana principal oculta los QShortcut de ventana no
+        disparan; PIPWindow reenvia el QKeyEvent crudo via sendEvent y
+        se maneja aqui. sendEvent no activa atajos: no hay doble disparo.
+        """
+        key = event.key()
+        modifiers = event.modifiers()
+        alt = Qt.KeyboardModifier.AltModifier
+        ctrl = Qt.KeyboardModifier.ControlModifier
+        shift = Qt.KeyboardModifier.ShiftModifier
+        if key == Qt.Key.Key_P and not modifiers or key == Qt.Key.Key_4 and modifiers & alt:
+            self._toggle_pip()
+        elif key == Qt.Key.Key_Up:
+            if modifiers & shift:
+                self._change_volume(+5)
+            else:
+                self._zap(-1)
+        elif key == Qt.Key.Key_Down:
+            if modifiers & shift:
+                self._change_volume(-5)
+            else:
+                self._zap(+1)
+        elif key == Qt.Key.Key_F and not modifiers:
+            self._toggle_fullscreen()
+        elif key == Qt.Key.Key_Escape:
+            self._exit_fullscreen()
+        elif key == Qt.Key.Key_G and modifiers & ctrl:
+            self.view_epg_action.trigger()
+        elif key == Qt.Key.Key_1 and modifiers & alt:
+            self._view_controller.activate(ViewMode.NORMAL)
+        elif key == Qt.Key.Key_2 and modifiers & alt:
+            self._view_controller.activate(ViewMode.COMPACT)
+        elif key == Qt.Key.Key_3 and modifiers & alt:
+            self._view_controller.activate(ViewMode.VIDEO)
+        elif key == Qt.Key.Key_S and modifiers & ctrl:
+            self._toggle_mute()
+        else:
+            super().keyPressEvent(event)
 
     def _toggle_pip(self):
         """Alterna la ventana PIP: DETACH del video_widget (REQ-6).
@@ -371,13 +418,22 @@ class IPTVMainWindow(QMainWindow):
     def _open_pip(self):
         pip = self._pip_window
         if pip is None:
-            pip = PIPWindow(self)
+            # Top-level (sin padre): si fuera hija de la principal, al
+            # ocultarla Qt ocultaria tambien el PIP.
+            pip = PIPWindow(self, parent=None)
             pip.geometry_changed.connect(self._arm_pip_geometry_save)
+            pip.closed.connect(self._close_pip)
             self._pip_window = pip
         pip.set_video_widget(self.video_widget)
         self._apply_pip_geometry(pip)
         pip.show()
         self._pip_open = True
+        # Ocultar la principal: el PIP queda como unica ventana visible
+        # (desaparece tambien de la barra de tareas). La app sigue viva
+        # porque la principal solo se oculta, no se cierra.
+        self.hide()
+        pip.raise_()
+        pip.activateWindow()
         self._retarget_video()
 
     def _close_pip(self):
@@ -391,6 +447,11 @@ class IPTVMainWindow(QMainWindow):
         pip.hide()
         self.video_widget.setParent(self.splitter)
         self.splitter.insertWidget(1, self.video_widget)
+        # Restaurar la principal (el PIP era la unica ventana visible).
+        if not self.isVisible():
+            self.show()
+            self.raise_()
+            self.activateWindow()
         self._pip_open = False
         self._apply_layout(self._view_controller.mode)
         self._retarget_video()
@@ -445,6 +506,30 @@ class IPTVMainWindow(QMainWindow):
             self._playback_manager.play_channel(channels[idx])
             if self._view_controller.mode is ViewMode.VIDEO or self._fullscreen_active:
                 self._show_channel_overlay()
+
+    def _on_up_key(self):
+        """↑ plano zapea; ↑ con Shift sube volumen (mismo atajo, distinto modificador)."""
+        if QApplication.queryKeyboardModifiers() & Qt.KeyboardModifier.ShiftModifier:
+            self._change_volume(+5)
+        else:
+            self._zap(-1)
+
+    def _on_down_key(self):
+        """↓ plano zapea; ↓ con Shift baja volumen (mismo atajo, distinto modificador)."""
+        if QApplication.queryKeyboardModifiers() & Qt.KeyboardModifier.ShiftModifier:
+            self._change_volume(-5)
+        else:
+            self._zap(+1)
+
+    def _toggle_mute(self):
+        """Alterna silenciado/audible (Ctrl+S, también desde el PIP)."""
+        self._muted = not self._muted
+        self._playback_manager.set_muted(self._muted)
+
+    def _change_volume(self, delta: int):
+        """Ajusta el volumen en pasos de 5, acotado a 0-100 (Shift+↑/↓)."""
+        self._volume = max(0, min(100, self._volume + delta))
+        self._playback_manager.set_volume(self._volume)
 
     def _show_channel_overlay(self):
         """Muestra el nombre del canal actual en un OSD durante 2 s."""
