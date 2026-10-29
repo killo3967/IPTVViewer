@@ -134,3 +134,59 @@ def test_switch_player_engine_rewires_retry_callback():
     manager.switch_player_engine(second, 123)
 
     assert second.on_retry_exhausted == manager._handle_retry_exhausted
+
+def test_play_channel_logs_engine_and_channel(caplog):
+    """Sin esta traza no se sabe si la orden llegó al motor."""
+    import logging
+
+    manager = PlaybackManager(FakePlayer())
+    channel = Channel(name="La 1", url="http://example.test/stream")
+
+    with caplog.at_level(logging.INFO):
+        manager.play_channel(channel)
+
+    assert "arrancando 'La 1' con FakePlayer" in caplog.text
+    assert "orden enviada a FakePlayer ('La 1')" in caplog.text
+
+
+def test_play_channel_logs_engine_failure(caplog):
+    import logging
+
+    import pytest
+
+    class BrokenPlayer(FakePlayer):
+        def play(self, url):
+            raise RuntimeError("sin DLL")
+
+    manager = PlaybackManager(BrokenPlayer())
+    channel = Channel(name="La 1", url="http://example.test/stream")
+
+    with caplog.at_level(logging.INFO), pytest.raises(RuntimeError):
+        manager.play_channel(channel)
+
+    assert "el motor BrokenPlayer no pudo arrancar 'La 1': sin DLL" in caplog.text
+
+
+def test_retry_exhausted_log_names_channel_and_engine(caplog):
+    import logging
+
+    player = FakePlayer()
+    manager = PlaybackManager(player)
+    manager.play_channel(Channel(name="La 1", url="http://example.test/stream"))
+
+    with caplog.at_level(logging.WARNING):
+        player.on_retry_exhausted()
+
+    assert "sin señal tras agotar reintentos (La 1, motor FakePlayer)" in caplog.text
+
+
+def test_stop_playback_logs_the_channel_it_stops(caplog):
+    import logging
+
+    manager = PlaybackManager(FakePlayer())
+    manager.play_channel(Channel(name="La 2", url="http://example.test/stream"))
+
+    with caplog.at_level(logging.INFO):
+        manager.stop_playback()
+
+    assert "deteniendo 'La 2'" in caplog.text

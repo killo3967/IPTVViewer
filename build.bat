@@ -20,7 +20,7 @@ echo [2/3] Verificando DLLs de mpv...
 if not exist "bin\libmpv-2.dll" (
     echo   AVISO: No se encontro bin\libmpv-2.dll
     echo   El ejecutable se generara SIN el motor mpv.
-    echo   Descarga libmpv para Windows y coloca las DLLs en bin\ (ver README).
+    echo   Descarga libmpv para Windows y coloca las DLLs en bin\ ^(ver README^).
 )
 
 echo [3/3] Compilando con PyInstaller...

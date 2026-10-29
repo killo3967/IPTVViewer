@@ -51,6 +51,7 @@ def _configure_dll_paths(variant: str = "generic") -> None:
 # -----------------------------------------------------------
 
 from src.domain.ports.i_player import IPlayer
+from src.infrastructure.utils.log_safe import safe_url
 
 
 def _mpv_proxy_decision(proxy_config):
@@ -225,9 +226,9 @@ class MpvPlayerAdapter(IPlayer):
         self._current_url = url
         try:
             self._player.play(url)
-            logging.debug(f"MPV: Reproduciendo {url}")
+            logging.info(f"MPV: cargando {safe_url(url)}")
         except Exception as e:
-            logging.error(f"MPV: Error al intentar reproducir: {e}")
+            logging.error(f"MPV: no se pudo cargar {safe_url(url)}: {e}")
 
     def stop(self):
         """Detiene la reproducción."""

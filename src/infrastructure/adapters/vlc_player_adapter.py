@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import Any, ClassVar
 
 from src.domain.ports.i_player import IPlayer
+from src.infrastructure.utils.log_safe import safe_url
 from src.infrastructure.utils.vlc_bootstrap import configure_vlc_env, detect_vlc_lib
 
 # Configurar python-vlc ANTES de importarlo: VLC portátil o carpeta señalada.
@@ -283,6 +284,7 @@ class VlcPlayerAdapter(IPlayer):
             return
 
         self._current_url = url  # Guardar para reconexión
+        logging.info(f"VLC: cargando {safe_url(url)}")
         media = self._instance.media_new(url)
         # Refuerzo de caching en el media
         media.add_option(f":network-caching={self._config.get('network_caching', 5000)}")

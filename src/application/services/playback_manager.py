@@ -26,8 +26,8 @@ class PlaybackManager:
         """Traduce el aviso del motor (hilo de VLC) a un callback de la app."""
         channel = self._current_channel
         logging.warning(
-            "Playback: sin señal tras agotar reintentos (%s)",
-            getattr(channel, "name", "canal desconocido"),
+            "Playback: sin señal tras agotar reintentos (%s, motor %s)",
+            getattr(channel, "name", "canal desconocido"), self.engine_name,
         )
         callback = self.on_playback_failed
         if callback is not None:
@@ -35,14 +35,30 @@ class PlaybackManager:
 
     def play_channel(self, channel: Channel):
         """Inicia la reproducción de un canal específico."""
+        motor = self.engine_name
+        logging.info("Playback: arrancando %r con %s", channel.name, motor)
         self._player.stop()
-        self._player.play(channel.url)
+        try:
+            self._player.play(channel.url)
+        except Exception as exc:
+            logging.error(
+                "Playback: el motor %s no pudo arrancar %r: %s", motor, channel.name, exc,
+            )
+            raise
         self._current_channel = channel
+        logging.info("Playback: orden enviada a %s (%r)", motor, channel.name)
 
     def stop_playback(self):
         """Detiene la reproducción actual."""
+        if self._current_channel is not None:
+            logging.info("Playback: deteniendo %r", self._current_channel.name)
         self._player.stop()
         self._current_channel = None
+
+    @property
+    def engine_name(self) -> str:
+        """Nombre del motor activo, para el log."""
+        return type(self._player).__name__
 
     def initialize_display(self, window_id: int):
         """Asocia el reproductor con el widget de la interfaz."""

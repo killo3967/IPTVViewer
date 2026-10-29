@@ -1,3 +1,5 @@
+import logging
+
 from src.domain.entities.playlist import Playlist
 from src.domain.ports.i_playlist_repo import IPlaylistRepository
 
@@ -12,4 +14,12 @@ class PlaylistLoader:
         """Coordina la carga de canales y aplica el filtro de grupo."""
         channels = self._repository.get_channels(source)
         full_playlist = Playlist(channels)
-        return full_playlist.filter_by_group(group_filter)
+        filtrada = full_playlist.filter_by_group(group_filter)
+        if group_filter:
+            logging.info(
+                "Lista: %d canales en la descarga, %d tras el filtro %r",
+                len(channels), len(filtrada), group_filter,
+            )
+        else:
+            logging.info("Lista: %d canales en la descarga, sin filtro", len(channels))
+        return filtrada
