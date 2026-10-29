@@ -102,3 +102,34 @@ def test_epg_show_title_only_defaults_to_only_title(tmp_path):
     _write_ini(path, {"player_engine": "vlc", "active": "0"})
 
     assert load_config(path)["epg_show_title_only"] is True
+
+
+def test_primer_arranque_trae_la_lista_por_defecto(tmp_path):
+    """Sin config.ini, la app arranca con una lista publica ya configurada."""
+    path = tmp_path / "no-existe.ini"
+
+    cargada = load_config(path)
+
+    fuente = cargada["sources"][0]
+    assert fuente["name"] == "LAQUAY TDT"
+    assert fuente["m3u"] == "https://www.tdtchannels.com/lists/tv.m3u"
+    assert fuente["epg"] == "https://www.tdtchannels.com/epg/TV.xml.gz"
+    assert fuente["filter"] == ""
+    assert cargada["active"] == 0
+
+
+def test_las_fuentes_del_usuario_no_se_sustituyen(tmp_path):
+    """La lista por defecto solo aparece cuando no hay ninguna configurada."""
+    path = tmp_path / "config.ini"
+    parser = configparser.ConfigParser()
+    parser["SETTINGS"] = {"active": "1"}
+    parser["source.0"] = {"name": "Mia", "m3u": "http://x/m3u", "filter": "", "epg": ""}
+    parser["source.1"] = {"name": "Otra", "m3u": "http://y/m3u", "filter": "", "epg": ""}
+    with open(path, "w", encoding="utf-8") as fichero:
+        parser.write(fichero)
+
+    cargada = load_config(path)
+
+    assert sorted(cargada["sources"]) == [0, 1]
+    assert cargada["sources"][0]["name"] == "Mia"
+    assert cargada["active"] == 1

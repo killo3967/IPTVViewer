@@ -4,11 +4,12 @@ hw_acceleration = True
 player_engine = mpv
 epg_show_title_only = True
 
+; Lista que la aplicacion crea sola en el primer arranque.
 [source.0]
-name = TV España
-m3u = https://github.com/coderfast/IPTV/blob/main/playlistEspana.m3u
-filter = SPAIN
-epg = http://tropical.jungle-team.online/epg/koala7.xml.gz
+name = LAQUAY TDT
+m3u = https://www.tdtchannels.com/lists/tv.m3u
+filter = 
+epg = https://www.tdtchannels.com/epg/TV.xml.gz
 
 [VLC]
 reset_plugins_cache = False

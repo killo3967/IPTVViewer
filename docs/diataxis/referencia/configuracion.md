@@ -34,11 +34,12 @@ hw_acceleration = True
 player_engine = mpv
 epg_show_title_only = True
 
+; Esta es la fuente que la aplicacion crea sola en el primer arranque.
 [source.0]
-name = TV España
-m3u = http://192.168.1.10:34400/m3u/xteve.m3u
-filter = SPAIN
-epg = http://192.168.1.10:34400/xmltv/xteve.xml
+name = LAQUAY TDT
+m3u = https://www.tdtchannels.com/lists/tv.m3u
+filter = 
+epg = https://www.tdtchannels.com/epg/TV.xml.gz
 
 [source.1]
 name = IPTV Premium

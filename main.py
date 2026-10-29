@@ -134,12 +134,13 @@ def load_config(config_path=None):
             active = 0
 
         if not sources:
-            # Sin fuentes: crear una por defecto
+            # Sin fuentes: lista pública de TDT con su guía, para que el primer
+            # arranque tenga algo que reproducir sin configurar nada.
             sources[0] = {
-                'name': 'TV España',
-                'm3u': 'http://localhost:34400/m3u/xteve.m3u',
-                'filter': 'SPAIN',
-                'epg': 'http://localhost:34400/xmltv/xteve.xml'
+                'name': 'LAQUAY TDT',
+                'm3u': 'https://www.tdtchannels.com/lists/tv.m3u',
+                'filter': '',
+                'epg': 'https://www.tdtchannels.com/epg/TV.xml.gz'
             }
             active = 0
 
