@@ -80,3 +80,115 @@ def test_get_program_schedule_sorts_programs_and_falls_back_by_normalized_name()
 
     assert [program.title for program in schedule] == ["Earlier Movie", "Later Movie"]
     assert manager.get_program_schedule("", "") == []
+
+
+def test_get_next_program_returns_the_first_program_starting_after_now():
+    current = make_program("Current", "id", -10, 20)
+    upcoming = make_program("Upcoming", "id", 20, 50)
+    later = make_program("Later", "id", 50, 80)
+    epg_data = EPGData([later, current, upcoming], {"id": "Some Channel"})
+    manager = EPGManager(FakeEPGRepository(epg_data))
+    manager.update_epg("guide.xml")
+
+    next_program = manager.get_next_program("id")
+
+    if next_program is None:
+        raise AssertionError("Expected a next program")
+    assert next_program.title == "Upcoming"
+
+
+def test_get_next_program_ignores_programs_that_already_started():
+    past = make_program("Past", "id", -120, -60)
+    current = make_program("Current", "id", -10, 20)
+    upcoming = make_program("Upcoming", "id", 25, 55)
+    epg_data = EPGData([past, current, upcoming], {"id": "Some Channel"})
+    manager = EPGManager(FakeEPGRepository(epg_data))
+    manager.update_epg("guide.xml")
+
+    next_program = manager.get_next_program("id")
+
+    if next_program is None:
+        raise AssertionError("Expected a next program")
+    assert next_program.title == "Upcoming"
+
+
+def test_get_next_program_returns_none_when_the_guide_ends():
+    past = make_program("Past", "id", -120, -60)
+    current = make_program("Current", "id", -10, 10)
+    epg_data = EPGData([past, current], {"id": "Some Channel"})
+    manager = EPGManager(FakeEPGRepository(epg_data))
+    manager.update_epg("guide.xml")
+
+    assert manager.get_next_program("id") is None
+
+
+def test_get_next_program_falls_back_by_normalized_name_and_copes_with_empty_ids():
+    upcoming = make_program("Upcoming News", "news.real.id", 30, 60)
+    epg_data = EPGData([upcoming], {"news.real.id": "News HD"})
+    manager = EPGManager(FakeEPGRepository(epg_data))
+    manager.update_epg("guide.xml")
+
+    by_name = manager.get_next_program("missing.id", "News-HD")
+
+    if by_name is None:
+        raise AssertionError("Expected a next program by normalized name")
+    assert by_name.title == "Upcoming News"
+    assert manager.get_next_program("", "") is None
+
+
+def test_get_next_program_returns_after_a_gap_in_the_guide():
+    current = make_program("Current", "id", -10, 10)
+    after_gap = make_program("After Gap", "id", 90, 120)
+    epg_data = EPGData([current, after_gap], {"id": "Some Channel"})
+    manager = EPGManager(FakeEPGRepository(epg_data))
+    manager.update_epg("guide.xml")
+
+    next_program = manager.get_next_program("id")
+
+    if next_program is None:
+        raise AssertionError("Expected a next program even with a gap")
+    assert next_program.title == "After Gap"
+
+
+
+def test_get_current_and_next_returns_both_with_one_lookup():
+    past = make_program("Past", "id", -120, -60)
+    current = make_program("Current", "id", -10, 20)
+    upcoming = make_program("Upcoming", "id", 20, 50)
+    epg_data = EPGData([upcoming, past, current], {"id": "Some Channel"})
+    manager = EPGManager(FakeEPGRepository(epg_data))
+    manager.update_epg("guide.xml")
+
+    current_program, next_program = manager.get_current_and_next("id")
+
+    if current_program is None or next_program is None:
+        raise AssertionError("Expected both current and next programs")
+    assert current_program.title == "Current"
+    assert next_program.title == "Upcoming"
+
+
+def test_get_current_and_next_with_gap_has_next_but_no_current():
+    upcoming = make_program("Upcoming", "id", 30, 60)
+    epg_data = EPGData([upcoming], {"id": "Some Channel"})
+    manager = EPGManager(FakeEPGRepository(epg_data))
+    manager.update_epg("guide.xml")
+
+    current_program, next_program = manager.get_current_and_next("id")
+
+    assert current_program is None
+    if next_program is None:
+        raise AssertionError("Expected a next program despite the gap")
+    assert next_program.title == "Upcoming"
+
+
+def test_get_current_and_next_at_the_end_of_the_guide_has_no_next():
+    current = make_program("Current", "id", -10, 10)
+    epg_data = EPGData([current], {"id": "Some Channel"})
+    manager = EPGManager(FakeEPGRepository(epg_data))
+    manager.update_epg("guide.xml")
+
+    current_program, next_program = manager.get_current_and_next("id")
+
+    if current_program is None:
+        raise AssertionError("Expected a current program")
+    assert next_program is None

@@ -66,7 +66,7 @@ flotante — sin opciones de configuración innecesarias, todo por atajos.
 |----|----------|-----|
 | D1 | `ViewModeController` Qt-free: enum `ViewMode` + `parse()` con fallback a NORMAL sin lanzar; `activate()` idempotente; listeners reciben `(old, new)` solo en cambio real; `resolve_zap_index` puro | REQ-1, REQ-8 |
 | D2 | Persistencia: `load_config`/`save_config` en `main.py` con parámetro opcional `config_path` para tests herméticos | REQ-8 |
-| D3 | Mapeo de layout en `IPTVMainWindow`: la ventana aplica el mapeo, nunca decide estado. NORMAL: tabla+video+menú; COMPACT: columnas 1-2 ocultas, sin menú; VIDEO: solo video, sin menú | REQ-2, REQ-10 |
+| D3 | Mapeo de layout en `IPTVMainWindow`: la ventana aplica el mapeo, nunca decide estado. NORMAL: panel de una columna variante normal + video + menú; COMPACT: panel de una columna variante compacta + video + menú; VIDEO: solo video, sin menú. **Actualizado 2026-10-21**: el panel pasó de 3 columnas a una sola y COMPACT ya no oculta columnas ni el menú (ver `odd/tasks/channel-panel-single-column.md`, D8–D11) | REQ-2, REQ-10 |
 | D4 | Splitter: debounce `QTimer` single-shot 300 ms en `splitterMoved`; snapshot síncrono pre-hide al entrar en VIDEO; el debounce se salta con la tabla oculta | REQ-8 |
 | D5 | Fullscreen: `F` toggle; timer 3 s oculta el cursor; `eventFilter` restaura al mover ratón; única salida por `_exit_fullscreen()` (F-off/Esc/close) | REQ-4 |
 | D6 | Re-target: `initialize_display(int(video_widget.winId()))` al final de cada cambio de modo (exactamente una vez) y tras abrir/cerrar PIP | REQ-7 |
@@ -113,8 +113,8 @@ Estado final (tras remediación `dd22668`; tabla completa de verify-report):
 
 | AC | Comportamiento | Test(s) de evidencia |
 |----|----------------|----------------------|
-| AC-1 | Arranque en NORMAL (3 columnas, video, menú) | `test_startup_default_is_normal_layout` |
-| AC-2 | Compact: columnas 1–2 ocultas, tabla+video visibles, menú oculto | `test_compact_layout_hides_columns_and_menubar` |
+| AC-1 | Arranque en NORMAL (panel de una columna variante normal, video, menú) | `test_startup_default_is_normal_layout` |
+| AC-2 | Compact: panel de una columna variante compacta, tabla+video visibles, menú **visible** y ancho mínimo 252 px | `test_compact_layout_uses_compact_delegate_and_keeps_menubar` |
 | AC-3 | Video: tabla oculta, video visible, menú oculto | `test_video_layout_hides_table_and_menubar` |
 | AC-4 | Vuelta a Normal; re-activar modo activo es no-op | `test_alt1_returns_to_normal`, `test_repressing_active_mode_shortcut_is_noop` |
 | AC-5 | Fullscreen + cursor auto-hide 3 s, restaurar al mover | `test_f_toggles_fullscreen_on/off`, `test_cursor_timeout_hides_cursor`, `test_mouse_move_restores_cursor_and_restarts_timer` |

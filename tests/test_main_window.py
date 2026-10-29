@@ -17,10 +17,10 @@ from PyQt6.QtWidgets import QApplication, QWidget
 from src.application.services.view_mode_controller import (
     ViewMode,
     encode_splitter_state,
-    )
+)
 from src.domain.entities.channel import Channel
 from src.domain.entities.playlist import Playlist
-from src.infrastructure.ui.main_window import IPTVMainWindow
+from src.infrastructure.ui.main_window import TABLE_MIN_WIDTH, IPTVMainWindow
 
 
 class FakePlaylistLoader:
@@ -73,14 +73,26 @@ class FakePlaybackManager:
 class FakeEPGManager:
     """Devuelve siempre el mismo programa (o nada) y cuenta las consultas."""
 
-    def __init__(self, program=None):
+    def __init__(self, program=None, next_program=None):
         self.has_data = program is not None
         self.program = program
+        self.next_program = next_program
         self.calls = 0
 
     def get_currently_airing(self, tvg_id: str, channel_name: str = ""):
         self.calls += 1
         return self.program
+
+    def get_program_schedule(self, tvg_id: str, channel_name: str = ""):
+        return [p for p in (self.program, self.next_program) if p is not None]
+
+    def get_current_and_next(self, tvg_id: str, channel_name: str = ""):
+        self.calls += 1
+        return self.program, self.next_program
+
+    def get_next_program(self, tvg_id: str, channel_name: str = ""):
+        self.calls += 1
+        return self.next_program
 
     def update_epg(self, source):
         pass
@@ -179,11 +191,19 @@ def make_window(config: dict | None = None, channels=None, save_callback=None,
     return window, playback_manager
 
 
-def test_window_constructs_with_three_columns(qtbot):
+def test_window_constructs_with_one_column(qtbot):
     window, _ = make_window()
     qtbot.addWidget(window)
 
-    assert window.table.columnCount() == 3
+    assert window.table.columnCount() == 1
+
+
+def test_window_title_is_just_the_app_name(qtbot):
+    """El título no lleva notas de arquitectura interna."""
+    window, _ = make_window()
+    qtbot.addWidget(window)
+
+    assert window.windowTitle() == "IPTV Viewer"
 
 
 def test_startup_default_is_normal_layout(qtbot):
@@ -193,16 +213,17 @@ def test_startup_default_is_normal_layout(qtbot):
     QApplication.processEvents()
 
     assert window.table.isVisible()
-    assert not window.table.isColumnHidden(0)
-    assert not window.table.isColumnHidden(1)
-    assert not window.table.isColumnHidden(2)
+    assert window._channel_delegate.layout == "normal"
+    assert window.table.minimumWidth() == TABLE_MIN_WIDTH["normal"]
+    assert window.table.rowHeight(0) == window._channel_delegate.row_height
     assert window.video_widget.isVisible()
     assert window.menuBar().isVisible()
     assert window.table.contextMenuPolicy() == Qt.ContextMenuPolicy.DefaultContextMenu
     assert window.video_widget.contextMenuPolicy() == Qt.ContextMenuPolicy.DefaultContextMenu
 
 
-def test_compact_layout_hides_columns_and_menubar(qtbot):
+def test_compact_layout_uses_compact_delegate_and_keeps_menubar(qtbot):
+    """Alt+2 ya no oculta columnas ni el menú: cambia el aspecto del panel."""
     window, _ = make_window()
     qtbot.addWidget(window)
     window.show()
@@ -211,12 +232,12 @@ def test_compact_layout_hides_columns_and_menubar(qtbot):
     window._apply_layout(ViewMode.COMPACT)
 
     assert window.table.isVisible()
-    assert not window.table.isColumnHidden(0)
-    assert window.table.isColumnHidden(1)
-    assert not window.table.isColumnHidden(2)
-    assert not window.menuBar().isVisible()
-    assert window.table.contextMenuPolicy() == Qt.ContextMenuPolicy.NoContextMenu
-    assert window.video_widget.contextMenuPolicy() == Qt.ContextMenuPolicy.NoContextMenu
+    assert window._channel_delegate.layout == "compact"
+    assert window.table.minimumWidth() == TABLE_MIN_WIDTH["compact"]
+    assert window.table.rowHeight(0) == window._channel_delegate.row_height
+    assert window.menuBar().isVisible()
+    assert window.table.contextMenuPolicy() == Qt.ContextMenuPolicy.DefaultContextMenu
+    assert window.video_widget.contextMenuPolicy() == Qt.ContextMenuPolicy.DefaultContextMenu
 
 
 def test_video_layout_hides_table_and_menubar(qtbot):
@@ -233,7 +254,7 @@ def test_video_layout_hides_table_and_menubar(qtbot):
     assert window.video_widget.contextMenuPolicy() == Qt.ContextMenuPolicy.NoContextMenu
 
 
-def test_return_to_normal_restores_columns_and_menubar(qtbot):
+def test_return_to_normal_restores_normal_delegate_and_menubar(qtbot):
     window, _ = make_window()
     qtbot.addWidget(window)
     window.show()
@@ -243,9 +264,8 @@ def test_return_to_normal_restores_columns_and_menubar(qtbot):
     window._apply_layout(ViewMode.NORMAL)
 
     assert not window.table.isHidden()
-    assert not window.table.isColumnHidden(0)
-    assert not window.table.isColumnHidden(1)
-    assert not window.table.isColumnHidden(2)
+    assert window._channel_delegate.layout == "normal"
+    assert window.table.minimumWidth() == TABLE_MIN_WIDTH["normal"]
     assert window.menuBar().isVisible()
     assert window.table.contextMenuPolicy() == Qt.ContextMenuPolicy.DefaultContextMenu
     assert window.video_widget.contextMenuPolicy() == Qt.ContextMenuPolicy.DefaultContextMenu
@@ -258,11 +278,10 @@ def test_startup_applies_persisted_compact_mode(qtbot):
     QApplication.processEvents()
 
     assert window.table.isVisible()
-    assert not window.table.isColumnHidden(0)
-    assert window.table.isColumnHidden(1)
-    assert not window.table.isColumnHidden(2)
-    assert not window.menuBar().isVisible()
-    assert window.table.contextMenuPolicy() == Qt.ContextMenuPolicy.NoContextMenu
+    assert window._channel_delegate.layout == "compact"
+    assert window.table.minimumWidth() == TABLE_MIN_WIDTH["compact"]
+    assert window.menuBar().isVisible()
+    assert window.table.contextMenuPolicy() == Qt.ContextMenuPolicy.DefaultContextMenu
 
 
 def test_alt2_switches_to_compact_and_persists(qtbot):
@@ -1323,7 +1342,7 @@ def test_audio_keys_forwarded_from_pip(qtbot):
 
 def test_epg_column_has_no_now_prefix(qtbot):
     """La celda guarda ProgramInfo y no escribe "NOW: ..." como texto."""
-    from src.infrastructure.ui.components.epg_program_delegate import (
+    from src.infrastructure.ui.components.channel_row_delegate import (
         EPG_PROGRAM_ROLE,
         ProgramInfo,
     )
@@ -1331,21 +1350,21 @@ def test_epg_column_has_no_now_prefix(qtbot):
     window, _ = make_window(epg_manager=FakeEPGManager(program=FakeProgram()))
     qtbot.addWidget(window)
 
-    item = window.table.item(0, 2)
+    item = window.table.item(0, 0)
     assert item.text() == ""
     info = item.data(EPG_PROGRAM_ROLE)
     assert isinstance(info, ProgramInfo)
     assert info.title == "Telediario"
 
 
-def test_epg_column_without_program_shows_placeholder(qtbot):
-    from src.infrastructure.ui.components.epg_program_delegate import EPG_PROGRAM_ROLE
+def test_row_without_program_has_no_epg_info(qtbot):
+    from src.infrastructure.ui.components.channel_row_delegate import EPG_PROGRAM_ROLE
 
     window, _ = make_window()
     qtbot.addWidget(window)
 
-    item = window.table.item(0, 2)
-    assert item.text() == "Guía no disponible"
+    item = window.table.item(0, 0)
+    assert item.text() == ""
     assert item.data(EPG_PROGRAM_ROLE) is None
 
 
@@ -1353,7 +1372,7 @@ def test_epg_title_only_setting_is_applied_to_delegate(qtbot):
     window, _ = make_window(config=make_config(epg_show_title_only=False))
     qtbot.addWidget(window)
 
-    assert window._epg_delegate.title_only is False
+    assert window._channel_delegate.title_only is False
     assert window._epg_show_title_only is False
 
 
@@ -1361,7 +1380,7 @@ def test_epg_title_only_defaults_to_true(qtbot):
     window, _ = make_window()
     qtbot.addWidget(window)
 
-    assert window._epg_delegate.title_only is True
+    assert window._channel_delegate.title_only is True
 
 
 def test_epg_config_dialog_action_persists_and_applies(qtbot, monkeypatch):
@@ -1384,7 +1403,7 @@ def test_epg_config_dialog_action_persists_and_applies(qtbot, monkeypatch):
     window._open_epg_config_dialog()
 
     assert window._config["epg_show_title_only"] is False
-    assert window._epg_delegate.title_only is False
+    assert window._channel_delegate.title_only is False
     assert saved and saved[-1]["epg_show_title_only"] is False
 
 
@@ -1428,7 +1447,7 @@ def test_visible_rows_refresh_does_not_touch_hidden_rows(qtbot):
 
 def test_epg_refresh_after_scroll_updates_new_visible_rows(qtbot):
     """Tras mover el scroll, el refresco alcanza las filas recién visibles."""
-    from src.infrastructure.ui.components.epg_program_delegate import EPG_PROGRAM_ROLE
+    from src.infrastructure.ui.components.channel_row_delegate import EPG_PROGRAM_ROLE
 
     channels = [
         Channel(name=f"c{i}", url=f"http://test/{i}", group="SPAIN") for i in range(40)
@@ -1447,7 +1466,7 @@ def test_epg_refresh_after_scroll_updates_new_visible_rows(qtbot):
 
     assert epg.calls > 0
     for row in window._visible_rows():
-        assert window.table.item(row, 2).data(EPG_PROGRAM_ROLE) is not None
+        assert window.table.item(row, 0).data(EPG_PROGRAM_ROLE) is not None
 
 def test_playback_failed_signal_shows_overlay(qtbot):
     """El aviso de "sin señal" llega a la UI como OSD."""
@@ -1469,3 +1488,51 @@ def test_notify_playback_failed_emits_channel_name(qtbot):
     window._notify_playback_failed(Channel(name="LA 2", url="http://test/la2"))
 
     assert received == ["LA 2"]
+
+
+class _InlineThread:
+    """Hilo que corre en línea: hace determinista la sonda del stream en tests."""
+
+    def __init__(self, target=None, args=(), name=None, daemon=None):
+        self._target = target
+        self._args = args
+
+    def start(self):
+        self._target(*self._args)
+
+
+def test_clicking_a_proxied_channel_resolves_the_real_stream_target(qtbot, monkeypatch):
+    """Con xteve, el log debe apuntar la URL real detrás de ``/stream/<hash>``."""
+    from src.infrastructure.ui import main_window as modulo
+
+    resueltas = []
+    monkeypatch.setattr(modulo, "log_stream_target", lambda url, timeout=3.0: resueltas.append(url))
+    monkeypatch.setattr(modulo.threading, "Thread", _InlineThread)
+
+    canal = Channel(
+        name="LA 2",
+        url="http://xteve.test:34400/stream/d6751076c8de7a5e947c8bbf7f090d1f",
+    )
+    window, _ = make_window(channels=[canal])
+    qtbot.addWidget(window)
+
+    window._on_item_clicked(window.table.item(0, 0))
+
+    assert resueltas == [canal.url]
+
+
+def test_clicking_a_direct_channel_does_not_probe_the_provider(qtbot, monkeypatch):
+    """Con la URL del proveedor no hay nada que resolver: no se le pide nada."""
+    from src.infrastructure.ui import main_window as modulo
+
+    resueltas = []
+    monkeypatch.setattr(modulo, "log_stream_target", lambda url, timeout=3.0: resueltas.append(url))
+    monkeypatch.setattr(modulo.threading, "Thread", _InlineThread)
+
+    canal = Channel(name="LA 1", url="http://panel.test:25461/user/pass/7")
+    window, _ = make_window(channels=[canal])
+    qtbot.addWidget(window)
+
+    window._on_item_clicked(window.table.item(0, 0))
+
+    assert resueltas == []

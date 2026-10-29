@@ -92,3 +92,7 @@ m3u/*.xmltv
 Thumbs.db
 .agent/fsm-state.json
 .github/context-mode/
+
+# Sandbox de pruebas: artefactos generados por los scripts de pruebas/
+pruebas/img/
+pruebas/logos/

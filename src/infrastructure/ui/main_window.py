@@ -1,9 +1,11 @@
 import logging
 import os
 import sys
+import threading
+import time
 
 import requests
-from PyQt6.QtCore import QEvent, QSize, Qt, QTimer, QUrl, pyqtSignal
+from PyQt6.QtCore import QEvent, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import (
     QActionGroup,
     QDesktopServices,
@@ -47,16 +49,24 @@ from src.application.services.view_mode_controller import (
 from src.domain.entities.channel import Channel
 from src.domain.entities.playlist import Playlist
 from src.infrastructure.adapters.qt_logo_loader_adapter import QtLogoLoaderAdapter
-from src.infrastructure.ui.components.epg_config_dialog import EPGConfigDialog
-from src.infrastructure.ui.components.epg_grid import EPGGridDialog
-from src.infrastructure.ui.components.epg_program_delegate import (
+from src.infrastructure.ui.components.channel_row_delegate import (
+    CHANNEL_ROLE,
     EPG_PROGRAM_ROLE,
-    EPGProgramDelegate,
+    ChannelRowDelegate,
     ProgramInfo,
 )
+from src.infrastructure.ui.components.epg_config_dialog import EPGConfigDialog
+from src.infrastructure.ui.components.epg_grid import EPGGridDialog
 from src.infrastructure.ui.components.pip_window import PIPWindow
+from src.infrastructure.utils.log_safe import safe_url
+from src.infrastructure.utils.stream_probe import is_proxied_stream, log_stream_target
 
 APP_VERSION = "1.8.1"
+
+#: Ancho mínimo del panel de canales por modo de vista, en px.
+#: Es un mínimo, no un ancho fijo: el splitter permite ensanchar el panel y el
+#: espacio restante se lo queda el vídeo.
+TABLE_MIN_WIDTH = {"normal": 340, "compact": 252}
 
 MIT_LICENSE_TEXT = """MIT License
 
@@ -171,7 +181,7 @@ class IPTVMainWindow(QMainWindow):
         self._epg_scroll_timer: QTimer | None = None
 
         # UI Initialization
-        self.setWindowTitle("IPTV Viewer – Arquitectura Hexagonal")
+        self.setWindowTitle("IPTV Viewer")
         self.resize(1200, 650)
         
         # Cargar icono de la aplicación
@@ -219,22 +229,21 @@ class IPTVMainWindow(QMainWindow):
         
         # Tabla
         self.table = QTableWidget()
-        self.table.setColumnCount(3)
-        self.table.setHorizontalHeaderLabels(["Canal", "Logo", "Programación"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.table.setColumnWidth(1, 120)
-        self.table.verticalHeader().setDefaultSectionSize(90)
-        self.table.setIconSize(self.table.iconSize().expandedTo(QSize(100, 75)))
+        self.table.setColumnCount(1)
+        self.table.setHorizontalHeaderLabels(["Canales"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.table.setShowGrid(False)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         # Quitar el indicador de foco (barra azul) del estilo nativo Windows 11
         self.table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setStyleSheet("QTableWidget::item:selected { background-color: #2f5f8f; color: white; }")
         self.table.itemClicked.connect(self._on_item_clicked)
-        self._epg_delegate = EPGProgramDelegate(self.table)
-        self._epg_delegate.set_title_only(self._epg_show_title_only)
-        self.table.setItemDelegateForColumn(2, self._epg_delegate)
+        # Una sola columna: el delegado pinta logo, nombre y toda la EPG.
+        self._channel_delegate = ChannelRowDelegate("normal", self.table)
+        self._channel_delegate.set_title_only(self._epg_show_title_only)
+        self.table.setItemDelegate(self._channel_delegate)
+        self._apply_table_metrics(ViewMode.NORMAL)
         self.table.verticalScrollBar().valueChanged.connect(self._arm_epg_refresh)
         splitter.addWidget(self.table)
         
@@ -260,6 +269,25 @@ class IPTVMainWindow(QMainWindow):
         # Inicializar el visor de video en el reproductor
         self._playback_manager.initialize_display(int(self.video_widget.winId()))
 
+    def _apply_table_metrics(self, mode: ViewMode):
+        """Ajusta delegado, alto de fila y ancho mínimo al modo de vista.
+
+        El alto se toma del delegado, que lo deriva de las métricas de la fuente:
+        fijarlo a mano hacía que las filas se montaran unas sobre otras.
+        """
+        layout = "compact" if mode is ViewMode.COMPACT else "normal"
+        self._channel_delegate.set_layout(layout)
+
+        row_height = self._channel_delegate.row_height
+        vheader = self.table.verticalHeader()
+        vheader.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        vheader.setDefaultSectionSize(row_height)
+        vheader.setMinimumSectionSize(row_height)
+        for row in range(self.table.rowCount()):
+            self.table.setRowHeight(row, row_height)
+
+        self.table.setMinimumWidth(TABLE_MIN_WIDTH[layout])
+
     def _apply_layout(self, mode: ViewMode):
         """Aplica el mapeo de layout por modo (REQ-2, REQ-10).
 
@@ -270,20 +298,19 @@ class IPTVMainWindow(QMainWindow):
         no_menu_policy = Qt.ContextMenuPolicy.NoContextMenu
         if mode is ViewMode.NORMAL:
             self.table.show()
-            self.table.setColumnHidden(0, False)
-            self.table.setColumnHidden(1, False)
-            self.table.setColumnHidden(2, False)
             self.menuBar().show()
+            self._apply_table_metrics(mode)
             self.table.setContextMenuPolicy(default_policy)
             self.video_widget.setContextMenuPolicy(default_policy)
             self._restore_splitter_state()
         elif mode is ViewMode.COMPACT:
+            # La variante compacta solo cambia el aspecto del panel: ni oculta
+            # columnas ni esconde el menú (decisión D10 del ODD).
             self.table.show()
-            self.table.setColumnHidden(1, True)
-            self.table.setColumnHidden(2, False)
-            self.menuBar().hide()
-            self.table.setContextMenuPolicy(no_menu_policy)
-            self.video_widget.setContextMenuPolicy(no_menu_policy)
+            self.menuBar().show()
+            self._apply_table_metrics(mode)
+            self.table.setContextMenuPolicy(default_policy)
+            self.video_widget.setContextMenuPolicy(default_policy)
         elif mode is ViewMode.VIDEO:
             self.table.hide()
             self.menuBar().hide()
@@ -835,13 +862,36 @@ class IPTVMainWindow(QMainWindow):
 
         source = active_src.get('m3u', '')
         group = active_src.get('filter', '')
+        nombre = active_src.get('name') or f'Lista {active_idx + 1}'
 
+        # Traza de la carga: sin estas líneas el log no dice si se llegó al
+        # servidor, cuántos canales llegaron, ni por qué se quedó en cero.
+        logging.info("Lista activa: %r desde %s", nombre, safe_url(source))
+        inicio = time.monotonic()
         try:
             playlist = self._playlist_loader.load_and_filter(source, group)
-            self._last_playlist = playlist
-            self._fill_table(playlist)
         except Exception as e:
+            logging.error(
+                "Lista %r: error al cargar tras %.2f s: %s",
+                nombre, time.monotonic() - inicio, e,
+            )
             QMessageBox.critical(self, "Error", f"No se pudo cargar la lista: {e}")
+            return
+
+        tardanza = time.monotonic() - inicio
+        if len(playlist) > 0:
+            logging.info(
+                "Lista %r: %d canales en pantalla en %.2f s",
+                nombre, len(playlist), tardanza,
+            )
+        else:
+            logging.error(
+                "Lista %r: 0 canales tras %.2f s; revisa la URL (%s) y el filtro %r",
+                nombre, tardanza, safe_url(source), group,
+            )
+
+        self._last_playlist = playlist
+        self._fill_table(playlist)
 
     def _show_epg_grid(self):
         """Muestra el diálogo de la parrilla EPG."""
@@ -1023,21 +1073,15 @@ class IPTVMainWindow(QMainWindow):
         self.table.setRowCount(len(playlist))
         self._logo_rows = {}
         for row, channel in enumerate(playlist):
-            # Nombre
-            self.table.setItem(row, 0, self._make_item(channel.name))
-            
-            # Logo
-            logo_item = self._make_item()
-            logo_item.setData(Qt.ItemDataRole.UserRole, channel)
-            self.table.setItem(row, 1, logo_item)
+            # Una sola celda por canal: el delegado pinta logo, nombre y EPG.
+            item = self._make_item()
+            item.setData(CHANNEL_ROLE, channel)
+            item.setData(EPG_PROGRAM_ROLE, None)
+            self.table.setItem(row, 0, item)
             if channel.logo_url:
                 self._logo_rows.setdefault(channel.logo_url, []).append(row)
                 self._logo_loader.get_logo(channel.logo_url)
-            
-            # EPG (Programación)
-            epg_item = self._make_item("Cargando guía...")
-            self.table.setItem(row, 2, epg_item)
-        
+
         # Actualizar visualización de EPG inmediatamente (todas las filas)
         self._refresh_epg_display(visible_only=False)
 
@@ -1056,9 +1100,11 @@ class IPTVMainWindow(QMainWindow):
         self._apply_epg_title_only(title_only)
 
     def _apply_epg_title_only(self, title_only: bool):
-        """Aplica el modo "solo título" y repinta la columna Programación."""
+        """Aplica el modo «solo título»: sin horas, barra, duración ni siguiente."""
         self._epg_show_title_only = title_only
-        self._epg_delegate.set_title_only(title_only)
+        self._channel_delegate.set_title_only(title_only)
+        # El alto de fila depende de las líneas visibles: hay que recalcularlo.
+        self._apply_table_metrics(self._view_controller.mode)
         self._refresh_epg_display(visible_only=False)
 
     def _arm_epg_refresh(self):
@@ -1083,10 +1129,10 @@ class IPTVMainWindow(QMainWindow):
         return range(first, last + 1)
 
     def _refresh_epg_display(self, visible_only: bool = True):
-        """Actualiza la columna de programación con el programa en curso.
+        """Actualiza las filas con el programa en curso y el siguiente.
 
         Por defecto solo recalcula las filas visibles. El porcentaje de la barra
-        se calcula al pintar (ver ``EPGProgramDelegate``), así que repintar el
+        se calcula al pintar (ver ``ChannelRowDelegate``), así que repintar el
         viewport basta para que todas las barras visibles avancen.
         """
         rows = self._visible_rows() if visible_only else range(self.table.rowCount())
@@ -1095,41 +1141,61 @@ class IPTVMainWindow(QMainWindow):
         self.table.viewport().update()
 
     def _refresh_epg_row(self, row: int):
-        """Fija en la fila el programa en curso (o "Guía no disponible")."""
-        channel_item = self.table.item(row, 1)
-        epg_item = self.table.item(row, 2)
-        if channel_item is None or epg_item is None:
+        """Fija en la fila el programa en curso y el siguiente (o los limpia)."""
+        item = self.table.item(row, 0)
+        if item is None:
             return
 
-        channel = channel_item.data(Qt.ItemDataRole.UserRole)
-        program = None
-        if channel is not None:
-            program = self._epg_manager.get_currently_airing(channel.tvg_id, channel.name)
+        channel = item.data(CHANNEL_ROLE)
+        if not isinstance(channel, Channel):
+            item.setData(EPG_PROGRAM_ROLE, None)
+            return
+
+        # Una sola consulta por fila: la ventana ya no pide actual y siguiente
+        # por separado, que recorrería y ordenaría la lista dos veces.
+        program, next_program = self._epg_manager.get_current_and_next(
+            channel.tvg_id or "", channel.name
+        )
 
         if program is None:
-            epg_item.setData(EPG_PROGRAM_ROLE, None)
-            epg_item.setText("Guía no disponible")
+            item.setData(EPG_PROGRAM_ROLE, None)
             return
 
-        epg_item.setData(EPG_PROGRAM_ROLE, ProgramInfo(
+        item.setData(EPG_PROGRAM_ROLE, ProgramInfo(
             title=program.title,
             start=program.start_time,
             end=program.end_time,
+            next_title=next_program.title if next_program else "",
         ))
-        epg_item.setText("")
 
     def _on_item_clicked(self, item: QTableWidgetItem):
-        row = item.row()
-        channel = self.table.item(row, 1).data(Qt.ItemDataRole.UserRole)
+        channel = self.table.item(item.row(), 0).data(CHANNEL_ROLE)
         if isinstance(channel, Channel):
-            logging.info(f"Reproduciendo: {channel.name}")
+            logging.info("Reproduciendo: %s (%s)", channel.name, safe_url(channel.url))
+            self._trace_stream_target(channel.url)
             self._playback_manager.play_channel(channel)
+
+    def _trace_stream_target(self, url: str, timeout: float = 3.0):
+        """Apunta en el log la URL real del stream, sin retrasar la reproducción.
+
+        Con un front-end delante (xteve) la lista trae ``/stream/<hash>`` y la URL
+        del proveedor solo aparece en el 302, así que se resuelve en un hilo
+        aparte: la sonda no puede bloquear el arranque del motor.
+        """
+        if not is_proxied_stream(url):
+            return
+        threading.Thread(
+            target=log_stream_target,
+            args=(url, timeout),
+            name="stream-target",
+            daemon=True,
+        ).start()
 
     def _on_logo_loaded(self, url: str, pixmap: QPixmap):
         """Actualiza solo las filas que usan este logo (índice inverso O(1))."""
         icon = QIcon(pixmap)
         for row in self._logo_rows.get(url, []):
-            item = self.table.item(row, 1)
+            item = self.table.item(row, 0)
             if item is not None:
                 item.setIcon(icon)
 
