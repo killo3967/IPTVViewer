@@ -1,0 +1,35 @@
+# Recurso de version del ejecutable: lo que Windows muestra en Propiedades.
+# Debe coincidir con APP_VERSION de src/infrastructure/ui/main_window.py;
+# tests/test_app_version.py falla si se desincronizan.
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 9, 0, 0),
+    prodvers=(1, 9, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo(
+      [
+        StringTable(
+          '040904B0',
+          [
+            StringStruct('CompanyName', 'killo3967'),
+            StringStruct('FileDescription', 'IPTV Viewer'),
+            StringStruct('FileVersion', '1.9.0'),
+            StringStruct('InternalName', 'IPTVViewer'),
+            StringStruct('LegalCopyright', 'Copyright (c) 2026 killo3967 - Licencia MIT'),
+            StringStruct('OriginalFilename', 'IPTVViewer.exe'),
+            StringStruct('ProductName', 'IPTV Viewer'),
+            StringStruct('ProductVersion', '1.9.0'),
+          ],
+        )
+      ]
+    ),
+    VarFileInfo([VarStruct('Translation', [1033, 1200])])
+  ]
+)

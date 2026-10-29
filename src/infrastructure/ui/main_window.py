@@ -61,7 +61,7 @@ from src.infrastructure.ui.components.pip_window import PIPWindow
 from src.infrastructure.utils.log_safe import safe_url
 from src.infrastructure.utils.stream_probe import is_proxied_stream, log_stream_target
 
-APP_VERSION = "1.8.1"
+APP_VERSION = "1.9.0"
 
 #: Ancho mínimo del panel de canales por modo de vista, en px.
 #: Es un mínimo, no un ancho fijo: el splitter permite ensanchar el panel y el
