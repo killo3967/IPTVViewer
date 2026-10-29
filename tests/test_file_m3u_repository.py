@@ -88,7 +88,7 @@ def test_remote_failure_is_logged_with_reason_not_credentials(monkeypatch, caplo
 
     with caplog.at_level(logging.INFO):
         canales = modulo.FileM3URepository().get_channels(
-            "http://server.test:34400/m3u/weteve_0.m3u?token=secreto"
+            "http://server.test:34400/m3u/lista.m3u?token=secreto"
         )
 
     assert canales == []
@@ -103,18 +103,18 @@ def test_remote_playlist_rewrites_loopback_logo_hosts():
     lines = [
         "#EXTM3U",
         '#EXTINF:-1 tvg-id="1" tvg-logo="http://localhost:34400/data_images/AMC.png" group-title="SPAIN",AMC',
-        "http://192.168.1.46:34400/stream/aaa",
+        "http://198.51.100.20:34400/stream/aaa",
         '#EXTINF:-1 tvg-id="2" tvg-logo="https://raw.githubusercontent.com/x/y.png",Otra',
-        "http://192.168.1.46:34400/stream/bbb",
+        "http://198.51.100.20:34400/stream/bbb",
     ]
     repo._get_content = lambda source: lines  # type: ignore[method-assign]
 
-    channels = repo.get_channels("http://192.168.1.46:34400/m3u/xteve.m3u")
+    channels = repo.get_channels("http://198.51.100.20:34400/m3u/xteve.m3u")
 
-    assert channels[0].logo_url == "http://192.168.1.46:34400/data_images/AMC.png"
+    assert channels[0].logo_url == "http://198.51.100.20:34400/data_images/AMC.png"
     assert channels[1].logo_url == "https://raw.githubusercontent.com/x/y.png"
     # Solo se toca el logo: la URL del stream se respeta tal cual.
-    assert channels[0].url == "http://192.168.1.46:34400/stream/aaa"
+    assert channels[0].url == "http://198.51.100.20:34400/stream/aaa"
 
 
 def test_local_playlist_keeps_loopback_logo_hosts(tmp_path):

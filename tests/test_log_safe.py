@@ -4,7 +4,7 @@ from src.infrastructure.utils.log_safe import safe_url
 
 
 def test_keeps_short_list_urls_intact():
-    url = "http://killo3967.duckdns.org:34400/m3u/xteve.m3u"
+    url = "http://panel.example.test:34400/m3u/xteve.m3u"
     assert safe_url(url) == url
 
 
@@ -20,8 +20,8 @@ def test_drops_userinfo_even_when_url_is_short():
 
 
 def test_keeps_the_two_last_segments_of_a_long_path():
-    url = "http://host:25461/u1/1211299111/3797"
-    assert safe_url(url) == "http://host:25461/…/1211299111/3797"
+    url = "http://host:25461/u1/1234567890/3797"
+    assert safe_url(url) == "http://host:25461/…/1234567890/3797"
 
 
 def test_handles_empty_and_broken_values():

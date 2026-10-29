@@ -99,7 +99,7 @@ Con el PIP abierto y el foco en él (acabas de arrastrarlo), verifica:
 
 ## Bloque 10 — Columna Programación (EPG)
 
-- [ ] **10.1** Con la lista de weteve, la columna Programación no muestra el prefijo `NOW:`.
+- [ ] **10.1** Con la lista local, la columna Programación no muestra el prefijo `NOW:`.
 - [ ] **10.2** Por defecto (*Configuración → Configuración de EPG*, casilla marcada) cada fila muestra solo el título del programa.
 - [ ] **10.3** Al desmarcar la casilla: título arriba, hora de inicio + barra azul-celeste + hora de fin, y la duración debajo (`30 min`, `1 h 30 min`, `2 h`).
 - [ ] **10.4** La barra está rellena según el tiempo transcurrido y avanza sola cada ~30 s.

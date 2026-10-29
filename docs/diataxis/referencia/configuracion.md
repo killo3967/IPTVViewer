@@ -36,9 +36,9 @@ epg_show_title_only = True
 
 [source.0]
 name = TV España
-m3u = http://192.168.1.46:34400/m3u/xteve.m3u
+m3u = http://192.168.1.10:34400/m3u/xteve.m3u
 filter = SPAIN
-epg = http://192.168.1.46:34400/xmltv/xteve.xml
+epg = http://192.168.1.10:34400/xmltv/xteve.xml
 
 [source.1]
 name = IPTV Premium

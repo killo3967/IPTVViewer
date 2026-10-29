@@ -11,9 +11,8 @@ from src.infrastructure.utils.stream_probe import (
     log_stream_target,
 )
 
-XTEVE = "http://killo3967.duckdns.org:34400/stream/d6751076c8de7a5e947c8bbf7f090d1f"
-PANEL = ("http://c56e0feea4ed97461a71b01f7fc98fa9.dev48536.top:25461/"
-         "rEBgMzhyOQ/1211299111/3846?h=106dad268&i=132511")
+XTEVE = "http://panel.example.test:34400/stream/0123456789abcdef0123456789abcdef"
+PANEL = "http://proveedor.example.test:25461/usuario/clave/3846?h=abcdef123&i=132511"
 
 
 class _FakeResponse:
@@ -46,9 +45,9 @@ def test_describe_stream_keeps_user_password_and_query_of_the_real_url(monkeypat
 
     texto = describe_stream(XTEVE)
 
-    assert "rEBgMzhyOQ" in texto
-    assert "1211299111" in texto
-    assert "h=106dad268&i=132511" in texto
+    assert "usuario/clave" in texto
+    assert "3846" in texto
+    assert "h=abcdef123&i=132511" in texto
 
 
 def test_describe_stream_reports_a_direct_stream(monkeypatch):
@@ -108,5 +107,5 @@ def test_log_stream_target_writes_the_line(monkeypatch, caplog):
     with caplog.at_level(logging.INFO):
         log_stream_target(XTEVE)
 
-    assert "Stream: http://killo3967.duckdns.org:34400" in caplog.text
-    assert "dev48536.top" in caplog.text
+    assert "Stream: http://panel.example.test:34400" in caplog.text
+    assert "proveedor.example.test" in caplog.text

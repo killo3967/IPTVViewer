@@ -1653,7 +1653,7 @@ def test_clicking_a_proxied_channel_resolves_the_real_stream_target(qtbot, monke
 
     canal = Channel(
         name="LA 2",
-        url="http://xteve.test:34400/stream/d6751076c8de7a5e947c8bbf7f090d1f",
+        url="http://panel.test:34400/stream/0123456789abcdef0123456789abcdef",
     )
     window, _ = make_window(channels=[canal])
     qtbot.addWidget(window)

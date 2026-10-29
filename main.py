@@ -137,9 +137,9 @@ def load_config(config_path=None):
             # Sin fuentes: crear una por defecto
             sources[0] = {
                 'name': 'TV España',
-                'm3u': 'http://192.168.1.46:34400/m3u/xteve.m3u',
+                'm3u': 'http://localhost:34400/m3u/xteve.m3u',
                 'filter': 'SPAIN',
-                'epg': 'http://192.168.1.46:34400/xmltv/xteve.xml'
+                'epg': 'http://localhost:34400/xmltv/xteve.xml'
             }
             active = 0
 

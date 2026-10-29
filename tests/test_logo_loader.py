@@ -135,14 +135,14 @@ def test_request_sets_the_transfer_timeout(qtbot, tmp_path):
 
 def test_hung_logo_is_logged_with_url_and_reason(qtbot, tmp_path, caplog):
     loader = _make_loader(tmp_path)
-    url = "http://172.26.64.1:34400/images/abc.png"
+    url = "http://10.20.30.40:34400/images/abc.png"
     reply = _make_error_reply()
 
     with caplog.at_level("WARNING"):
         loader.get_logo(url)
         loader._handle_response(reply, url, loader._get_cache_path(url))
 
-    assert "172.26.64.1:34400" in caplog.text
+    assert "10.20.30.40:34400" in caplog.text
     assert "HostNotFoundError" in caplog.text
 
 

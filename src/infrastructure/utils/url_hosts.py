@@ -7,7 +7,7 @@ cualquier otro equipo: ``localhost`` designa siempre a la máquina que hace la
 petición, no a la que sirve la lista.
 
 La corrección es determinista y se limita al bucle local. Una IP privada
-(``172.26.64.1``) o un nombre DNS mal puestos pueden ser válidos en otras
+(``10.20.30.40``) o un nombre DNS mal puestos pueden ser válidos en otras
 redes, así que no se tocan: eso se corrige en el origen.
 """
 

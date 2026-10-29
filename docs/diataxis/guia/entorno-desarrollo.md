@@ -19,7 +19,7 @@
 
 ```powershell
 # 1. Clonar o copiar el proyecto
-cd K:\IPTVViewer
+cd <ruta-del-repo>
 
 # 2. Crear entorno virtual
 python -m venv .venv

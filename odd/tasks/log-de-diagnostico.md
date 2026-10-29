@@ -11,7 +11,7 @@ el motor. Hoy el usuario está a ciegas cuando una lista no trae canales.
 
 El log solo escribía «Cambiando a lista: X» y «Reproduciendo: <canal>». No había
 ni una línea sobre la descarga (HTTP, tamaño, tiempo), ni el número de canales, ni
-la URL del stream. Con Proton VPN activo y una lista por internet no se podía
+la URL del stream. Con VPN activa y una lista por internet no se podía
 distinguir «no llego al servidor» de «llego y la lista viene vacía» de «la lista
 está bien y falla el motor».
 
@@ -64,13 +64,13 @@ está bien y falla el motor».
 
 ## Verification Evidence
 
-- Sesión real del 2026-10-24 20:23 con `XTEVE INTERNET` y Proton VPN conectado:
+- Sesión real del 2026-10-24 20:23 con `PANEL REMOTO` y VPN activa:
   ```
-  Lista activa: 'XTEVE INTERNET' desde http://killo3967.duckdns.org:34400/m3u/xteve.m3u
-  M3U: GET http://killo3967.duckdns.org:34400/m3u/xteve.m3u -> HTTP 200, 22148 B en 0.45 s
-  M3U: 80 canales parseados de http://killo3967.duckdns.org:34400/m3u/xteve.m3u (161 líneas)
+  Lista activa: 'PANEL REMOTO' desde http://panel.example.test:34400/m3u/xteve.m3u
+  M3U: GET http://panel.example.test:34400/m3u/xteve.m3u -> HTTP 200, 22148 B en 0.45 s
+  M3U: 80 canales parseados de http://panel.example.test:34400/m3u/xteve.m3u (161 líneas)
   Lista: 80 canales en la descarga, sin filtro
-  Lista 'XTEVE INTERNET': 80 canales en pantalla en 0.45 s
+  Lista 'PANEL REMOTO': 80 canales en pantalla en 0.45 s
   ```
 - `pytest tests/` → 282 passed; `ruff` y `mypy` limpios.
 - Tests nuevos: `tests/test_log_safe.py` (6), `test_playlist_loader.py` (+2),
@@ -80,7 +80,7 @@ está bien y falla el motor».
 - Sonda del salto contra el xteve real (2026-10-24), función que usa la app, ya
   con la URL completa:
   ```
-  Stream: http://killo3967.duckdns.org:34400/stream/100d3e69b383614712194f8c9abe6612 → http://c56e0feea4ed97461a71b01f7fc98fa9.dev48536.top:25461/rEBgMzhyOQ/1211299111/3797?h=106dad268ff40f3a58d59df07d2da56d5fd79dc5&z=&i=132511
+  Stream: http://panel.example.test:34400/stream/0123456789abcdef0123456789abcdef → http://proveedor.example.test:25461/usuario/clave/3797?h=0123456789abcdef&z=&i=132511
   ```
 - `pytest tests/` → 292 passed; `ruff` y `mypy` limpios. Tests nuevos:
   `tests/test_stream_probe.py` (7) y dos en `test_main_window.py` (se resuelve con
