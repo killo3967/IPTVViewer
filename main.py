@@ -220,12 +220,34 @@ def get_active_epg(config_data: dict) -> str:
     return _get_active_source(config_data).get('epg', '')
 
 def save_config(config_data, config_path=None):
-    """Guarda los cambios de configuración en config.ini (formato nuevo con fuentes por nombre)."""
+    """Guarda la configuración sin borrar lo que no gestiona la aplicación.
+
+    El fichero puede contener secciones de otras herramientas (por ejemplo
+    ``[listmanager.target.*]``) y claves que esta versión no conoce. Se parte de
+    lo que ya hay y solo se actualizan las claves propias: reconstruirlo desde
+    cero las eliminaba en cada guardado, y desde que la comprobación de
+    actualizaciones guarda sola al arrancar eso ocurría sin que el usuario
+    tocara nada. Las secciones ``source.N`` que ya no existen sí se eliminan,
+    porque esas son de la aplicación.
+    """
     path = config_path or CONFIG_FILE
     parser = configparser.ConfigParser()
+    if path.exists():
+        try:
+            parser.read(path, encoding='utf-8')
+        except configparser.Error:
+            # Un fichero ilegible no debe impedir guardar: se reescribe entero.
+            logging.warning("config.ini ilegible; se reescribe desde cero")
+            parser = configparser.ConfigParser()
+
+    def seccion(nombre: str) -> configparser.SectionProxy:
+        """Devuelve la sección pedida, creándola si el fichero no la tenía."""
+        if not parser.has_section(nombre):
+            parser.add_section(nombre)
+        return parser[nombre]
 
     # Ajustes generales
-    parser['SETTINGS'] = {
+    seccion('SETTINGS').update({
         'active': str(config_data.get('active', 0)),
         'hw_acceleration': str(config_data.get('hw_acceleration', False)),
         'player_engine': config_data.get('player_engine', 'vlc'),
@@ -236,28 +258,33 @@ def save_config(config_data, config_path=None):
         'epg_show_title_only': str(config_data.get('epg_show_title_only', True)),
         'last_update_check': config_data.get('last_update_check', ''),
         'ignored_update_version': config_data.get('ignored_update_version', ''),
-    }
+    })
 
-    # Fuentes M3U (con nombre)
-    for idx, src in config_data.get('sources', {}).items():
-        parser[f'source.{idx}'] = {
+    # Fuentes M3U (con nombre): las que ya no existen se descartan
+    fuentes = config_data.get('sources', {})
+    vigentes = {f'source.{idx}' for idx in fuentes}
+    for nombre in [s for s in parser.sections() if s.startswith('source.')]:
+        if nombre not in vigentes:
+            parser.remove_section(nombre)
+    for idx, src in fuentes.items():
+        seccion(f'source.{idx}').update({
             'name': src.get('name', f'Lista {idx+1}'),
             'm3u': src.get('m3u', ''),
             'filter': src.get('filter', ''),
             'epg': src.get('epg', ''),
-        }
+        })
 
     # Ajustes específicos de VLC
     vlc_config = config_data.get('vlc_config', {})
-    parser['VLC'] = {k: str(v) for k, v in vlc_config.items()}
+    seccion('VLC').update({k: str(v) for k, v in vlc_config.items()})
 
     # Ajustes específicos de MPV
     mpv_config = config_data.get('mpv_config', {})
-    parser['MPV'] = {k: str(v) for k, v in mpv_config.items()}
+    seccion('MPV').update({k: str(v) for k, v in mpv_config.items()})
 
     # Ajustes específicos de Proxy
     proxy_config = config_data.get('proxy_config', {})
-    parser['PROXY'] = {k: str(v) for k, v in proxy_config.items()}
+    seccion('PROXY').update({k: str(v) for k, v in proxy_config.items()})
 
     with open(path, 'w', encoding='utf-8') as f:
         parser.write(f)
