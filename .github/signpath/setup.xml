@@ -1,0 +1,14 @@
+<!--
+  Configuración de artefacto para firmar el instalador de Inno Setup.
+
+  En SignPath: Artifact Configurations → New → pegar este XML con el slug
+  `setup`. El ejecutable interior ya viaja firmado desde la etapa anterior, por
+  eso aquí solo se firma el instalador.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="IPTVViewer-Setup-*.exe" max-matches="1">
+      <authenticode-sign/>
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

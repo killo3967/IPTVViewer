@@ -20,6 +20,10 @@ jobs:
     name: Build Windows installer
     runs-on: windows-latest
     timeout-minutes: 60
+    env:
+      # La firma solo se intenta si hay token. Sin el, todos los pasos de firma
+      # se saltan y el workflow publica exactamente igual que antes.
+      SIGNPATH_ENABLED: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
 
     steps:
       - name: Checkout
@@ -143,6 +147,42 @@ jobs:
           python -m PyInstaller --noconfirm --clean IPTVViewer.spec
           ls -la dist/
 
+      # --- firma del ejecutable (ver .github/signpath/README.md) ---
+      - name: Upload unsigned exe
+        if: env.SIGNPATH_ENABLED == 'true'
+        id: upload-exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-exe
+          path: dist/IPTVViewer.exe
+
+      - name: Sign exe
+        if: env.SIGNPATH_ENABLED == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: exe
+          github-artifact-id: ${{ steps.upload-exe.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: dist/signed-exe
+
+      - name: Use the signed exe
+        if: env.SIGNPATH_ENABLED == 'true'
+        shell: bash
+        run: |
+          cp dist/signed-exe/IPTVViewer.exe dist/IPTVViewer.exe
+
+      - name: Verify exe signature
+        if: env.SIGNPATH_ENABLED == 'true'
+        shell: powershell
+        run: |
+          $sig = Get-AuthenticodeSignature dist\IPTVViewer.exe
+          Write-Host "Editor: $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') { throw "Firma del exe no valida: $($sig.Status)" }
+
       - name: Install Inno Setup
         shell: powershell
         run: |
@@ -154,6 +194,37 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=$env:VERSION installer\IPTVViewer.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC fallo con codigo $LASTEXITCODE" }
           Get-ChildItem dist
+
+      # --- firma del instalador (ver .github/signpath/README.md) ---
+      - name: Upload unsigned setup
+        if: env.SIGNPATH_ENABLED == 'true'
+        id: upload-setup
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-setup
+          path: dist/IPTVViewer-Setup-*.exe
+
+      - name: Sign setup
+        if: env.SIGNPATH_ENABLED == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: setup
+          github-artifact-id: ${{ steps.upload-setup.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: dist/signed-setup
+
+      - name: Use and verify the signed setup
+        if: env.SIGNPATH_ENABLED == 'true'
+        shell: powershell
+        run: |
+          Copy-Item dist/signed-setup/IPTVViewer-Setup-*.exe dist/ -Force
+          $sig = Get-AuthenticodeSignature (Get-ChildItem dist\IPTVViewer-Setup-*.exe | Select-Object -First 1)
+          Write-Host "Editor: $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') { throw "Firma del instalador no valida: $($sig.Status)" }
 
       - name: Create GitHub release
         shell: bash

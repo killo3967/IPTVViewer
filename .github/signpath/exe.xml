@@ -1,0 +1,15 @@
+<!--
+  Configuración de artefacto para firmar el ejecutable.
+
+  En SignPath: Artifact Configurations → New → pegar este XML con el slug `exe`.
+
+  `upload-artifact` guarda el fichero dentro de un ZIP, así que la raíz tiene
+  que ser `<zip-file>` y el ejecutable va como hijo anidado.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="IPTVViewer.exe">
+      <authenticode-sign/>
+    </pe-file>
+  </zip-file>
+</artifact-configuration>
