@@ -194,6 +194,8 @@ def load_config(config_path=None):
         'view_mode': ViewMode.parse(parser.get('SETTINGS', 'view_mode', fallback='')).value,
         'splitter_state': parser.get('SETTINGS', 'splitter_state', fallback=''),
         'epg_show_title_only': parser.getboolean('SETTINGS', 'epg_show_title_only', fallback=True),
+        'last_update_check': parser.get('SETTINGS', 'last_update_check', fallback=''),
+        'ignored_update_version': parser.get('SETTINGS', 'ignored_update_version', fallback=''),
         'pip_geometry': parser.get('SETTINGS', 'pip_geometry', fallback=''),
     }
 
@@ -232,6 +234,8 @@ def save_config(config_data, config_path=None):
         'splitter_state': config_data.get('splitter_state', ''),
         'pip_geometry': config_data.get('pip_geometry', ''),
         'epg_show_title_only': str(config_data.get('epg_show_title_only', True)),
+        'last_update_check': config_data.get('last_update_check', ''),
+        'ignored_update_version': config_data.get('ignored_update_version', ''),
     }
 
     # Fuentes M3U (con nombre)
