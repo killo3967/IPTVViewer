@@ -65,12 +65,28 @@ jobs:
         run: |
           python - <<'PY'
           import os, re
+
+          version = os.environ["VERSION"]
+
+          # Constante que muestra la app y compara el buscador de actualizaciones.
           p = "src/infrastructure/ui/main_window.py"
           s = open(p, encoding="utf-8").read()
-          new = 'APP_VERSION = "' + os.environ["VERSION"] + '"'
-          s = re.sub(r'APP_VERSION = "[^"]*"', new, s, count=1)
+          s = re.sub(r'APP_VERSION = "[^"]*"', 'APP_VERSION = "' + version + '"', s, count=1)
           open(p, "w", encoding="utf-8").write(s)
-          print("APP_VERSION ->", os.environ["VERSION"])
+
+          # Recurso de version que Windows lee del EXE. Si no se reescribe, el
+          # ejecutable anuncia para siempre la version de la ultima edicion manual.
+          partes = [int(x) for x in version.split(".")] + [0]
+          cuadruple = "(" + ", ".join(str(n) for n in partes) + ")"
+          v = "version_info.txt"
+          t = open(v, encoding="utf-8").read()
+          t = re.sub(r"filevers=\([^)]*\)", "filevers=" + cuadruple, t)
+          t = re.sub(r"prodvers=\([^)]*\)", "prodvers=" + cuadruple, t)
+          t = re.sub(r"StringStruct\('FileVersion', '[^']*'\)", "StringStruct('FileVersion', '" + version + "')", t)
+          t = re.sub(r"StringStruct\('ProductVersion', '[^']*'\)", "StringStruct('ProductVersion', '" + version + "')", t)
+          open(v, "w", encoding="utf-8").write(t)
+
+          print("APP_VERSION y version_info.txt ->", version)
           PY
 
       - name: Generate release notes
