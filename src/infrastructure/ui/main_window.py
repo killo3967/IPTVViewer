@@ -1,11 +1,14 @@
 import logging
 import os
 import sys
+import tempfile
 import threading
 import time
+from datetime import datetime
+from pathlib import Path
 
 import requests
-from PyQt6.QtCore import QEvent, Qt, QTimer, QUrl, pyqtSignal
+from PyQt6.QtCore import QEvent, QObject, QProcess, Qt, QTimer, QUrl, pyqtSignal
 from PyQt6.QtGui import (
     QActionGroup,
     QDesktopServices,
@@ -17,6 +20,7 @@ from PyQt6.QtGui import (
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -27,6 +31,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMessageBox,
+    QProgressDialog,
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
@@ -60,6 +65,14 @@ from src.infrastructure.ui.components.epg_grid import EPGGridDialog
 from src.infrastructure.ui.components.pip_window import PIPWindow
 from src.infrastructure.utils.log_safe import safe_url
 from src.infrastructure.utils.stream_probe import is_proxied_stream, log_stream_target
+from src.infrastructure.utils.updater import (
+    RELEASES_API,
+    UpdateInfo,
+    download,
+    parse_release,
+    setup_arguments,
+    should_check,
+)
 
 APP_VERSION = "1.9.0"
 
@@ -92,11 +105,70 @@ SOFTWARE.
 """
 
 
-def _version_tuple(v):
-    try:
-        return tuple(int(x) for x in v.split("."))
-    except (ValueError, AttributeError):
-        return (0,)
+class _UpdateChecker(QObject):
+    """Consulta la última release en un hilo aparte.
+
+    ``requests`` bloquea, así que no puede llamarse desde el hilo de la
+    interfaz: el arranque se quedaría parado esperando a GitHub.
+    """
+
+    available = pyqtSignal(object)  # UpdateInfo
+    up_to_date = pyqtSignal(str)
+    failed = pyqtSignal(str)
+
+    def __init__(self, current_version: str, parent=None):
+        super().__init__(parent)
+        self._current_version = current_version
+
+    def check_async(self) -> None:
+        """Lanza la consulta; el resultado llega por señal."""
+        threading.Thread(target=self._run, name="update-check", daemon=True).start()
+
+    def _run(self) -> None:
+        try:
+            respuesta = requests.get(
+                RELEASES_API,
+                timeout=8,
+                headers={"User-Agent": f"IPTVViewer/{self._current_version}"},
+            )
+            respuesta.raise_for_status()
+            info = parse_release(respuesta.json(), self._current_version)
+        except Exception as exc:  # red caída, JSON raro, límite de la API
+            logging.info("Actualización: no se pudo consultar la release: %s", exc)
+            self.failed.emit(str(exc))
+            return
+
+        if info is None:
+            self.up_to_date.emit(self._current_version)
+        else:
+            self.available.emit(info)
+
+
+class _SetupDownloader(QObject):
+    """Descarga el instalador de la actualización en un hilo aparte."""
+
+    progress = pyqtSignal(int, int)
+    finished = pyqtSignal(str)
+    failed = pyqtSignal(str)
+
+    def start(self, info: UpdateInfo, destination: Path) -> None:
+        threading.Thread(
+            target=self._run, args=(info, destination), name="update-download", daemon=True
+        ).start()
+
+    def _run(self, info: UpdateInfo, destination: Path) -> None:
+        try:
+            ruta = download(
+                info.asset_url,
+                destination,
+                info.digest,
+                progress=lambda hechos, total: self.progress.emit(hechos, total),
+            )
+        except Exception as exc:
+            logging.error("Actualización: falló la descarga: %s", exc)
+            self.failed.emit(str(exc))
+            return
+        self.finished.emit(str(ruta))
 
 
 class SourceEditorDialog(QDialog):
@@ -213,6 +285,19 @@ class IPTVMainWindow(QMainWindow):
         
         # Connect logo loader
         self._logo_loader.logo_loaded.connect(self._on_logo_loaded)
+
+        # Autoactualización: consulta silenciosa al arrancar y aviso al usuario.
+        self._update_silent = True
+        self._update_progress_dialog: QProgressDialog | None = None
+        self._update_checker = _UpdateChecker(APP_VERSION, self)
+        self._update_checker.available.connect(self._on_update_available)
+        self._update_checker.up_to_date.connect(self._on_up_to_date)
+        self._update_checker.failed.connect(self._on_update_check_failed)
+        self._update_downloader = _SetupDownloader(self)
+        self._update_downloader.progress.connect(self._on_update_progress)
+        self._update_downloader.finished.connect(self._on_update_downloaded)
+        self._update_downloader.failed.connect(self._on_update_download_failed)
+        QTimer.singleShot(4000, self._auto_check_updates)
 
         # Load data
         self._load_data()
@@ -1237,29 +1322,132 @@ class IPTVMainWindow(QMainWindow):
         """Abre el repositorio de GitHub en el navegador."""
         QDesktopServices.openUrl(QUrl("https://github.com/killo3967/IPTVViewer"))
 
+    def _auto_check_updates(self):
+        """Comprobación silenciosa al arrancar, como mucho una vez al día."""
+        if not should_check(str(self._config.get('last_update_check', ''))):
+            return
+        self._remember_update_check()
+        self._update_silent = True
+        self._update_checker.check_async()
+
+    def _remember_update_check(self):
+        """Anota la comprobación para no repetirla en cada arranque."""
+        self._config['last_update_check'] = datetime.now().isoformat(timespec='seconds')
+        if self._save_callback:
+            self._save_callback(self._config)
+
     def _check_updates(self):
-        """Comprueba si hay una versión más reciente en GitHub Releases."""
-        try:
-            resp = requests.get(
-                "https://api.github.com/repos/killo3967/IPTVViewer/releases/latest",
-                timeout=5,
+        """Comprobación a petición desde el menú."""
+        self._update_silent = False
+        self._update_checker.check_async()
+
+    def _on_update_available(self, info: UpdateInfo):
+        """Avisa de la versión nueva, salvo que el usuario pidiera no verla."""
+        if str(info.version) == str(self._config.get('ignored_update_version', '')):
+            logging.info("Actualización: %s ignorada por el usuario", info.version)
+            return
+        self._offer_update(info)
+
+    def _on_up_to_date(self, version: str):
+        logging.info("Actualización: al día (%s)", version)
+        if self._update_silent:
+            return
+        QMessageBox.information(
+            self, "Actualización", f"Ya tienes la última versión ({version})."
+        )
+
+    def _on_update_check_failed(self, detalle: str):
+        logging.warning("Actualización: no se pudo comprobar la versión: %s", detalle)
+        if self._update_silent:
+            return
+        QMessageBox.warning(
+            self, "Actualización", "No se pudo comprobar la versión (¿sin conexión?)."
+        )
+
+    def _offer_update(self, info: UpdateInfo):
+        """Pregunta qué hacer con la versión nueva."""
+        caja = QMessageBox(self)
+        caja.setWindowTitle("Actualización disponible")
+        caja.setIcon(QMessageBox.Icon.Information)
+        caja.setText(f"Hay una versión nueva: {info.version} (tienes {APP_VERSION}).")
+        if info.can_self_update:
+            caja.setInformativeText(
+                "Se descargará el instalador, se comprobará su SHA-256 y la aplicación "
+                "se reiniciará sola. Si hay algo reproduciéndose, se cerrará."
             )
-            if resp.status_code == 200:
-                latest = resp.json().get("tag_name", "").lstrip("v")
-                if _version_tuple(latest) > _version_tuple(APP_VERSION):
-                    QMessageBox.information(
-                        self, "Actualización",
-                        f"Hay una versión más reciente: {latest} (actual: {APP_VERSION}).",
-                    )
-                else:
-                    QMessageBox.information(
-                        self, "Actualización",
-                        f"Ya tienes la última versión ({APP_VERSION}).",
-                    )
-            else:
-                QMessageBox.warning(self, "Actualización", "No se pudo comprobar la versión.")
-        except Exception:
-            QMessageBox.warning(self, "Actualización", "No se pudo comprobar la versión (¿sin conexión?).")
+        else:
+            caja.setInformativeText(
+                "Esta versión no se puede instalar sola: se abrirá la página de descarga."
+            )
+        ver = caja.addButton("Ver novedades", QMessageBox.ButtonRole.ActionRole)
+        actualizar = None
+        if info.can_self_update:
+            actualizar = caja.addButton("Actualizar ahora", QMessageBox.ButtonRole.AcceptRole)
+        caja.addButton("Más tarde", QMessageBox.ButtonRole.RejectRole)
+        no_avisar = QCheckBox(f"No avisar de la {info.version}")
+        caja.setCheckBox(no_avisar)
+
+        caja.exec()
+        pulsado = caja.clickedButton()
+
+        if no_avisar.isChecked():
+            self._config['ignored_update_version'] = info.version
+            if self._save_callback:
+                self._save_callback(self._config)
+            logging.info("Actualización: el usuario no quiere avisos de %s", info.version)
+
+        if pulsado is ver and info.page_url:
+            QDesktopServices.openUrl(QUrl(info.page_url))
+        elif actualizar is not None and pulsado is actualizar:
+            self._start_update(info)
+
+    def _start_update(self, info: UpdateInfo):
+        """Descarga el instalador con progreso, sin bloquear la interfaz."""
+        dialogo = QProgressDialog("Descargando la actualización…", "", 0, 100, self)
+        dialogo.setWindowTitle("Actualización")
+        dialogo.setWindowModality(Qt.WindowModality.WindowModal)
+        dialogo.setMinimumDuration(0)
+        dialogo.setAutoClose(False)
+        dialogo.setAutoReset(False)
+        dialogo.setCancelButton(None)
+        dialogo.setValue(0)
+        self._update_progress_dialog = dialogo
+        self._update_downloader.start(info, Path(tempfile.gettempdir()) / info.asset_name)
+
+    def _on_update_progress(self, hechos: int, total: int):
+        dialogo = self._update_progress_dialog
+        if dialogo is None:
+            return
+        if total > 0:
+            dialogo.setMaximum(total)
+            dialogo.setValue(min(hechos, total))
+
+    def _on_update_downloaded(self, ruta: str):
+        """Lanza el instalador silencioso y cierra la app para que pueda escribir."""
+        self._close_update_progress()
+        logging.info("Actualización: instalador verificado en %s", ruta)
+        self._playback_manager.stop_playback()
+        if not QProcess.startDetached(ruta, setup_arguments()):
+            QMessageBox.warning(
+                self,
+                "Actualización",
+                "No se pudo iniciar el instalador. Descárgalo desde la página de la release.",
+            )
+            return
+        self.close()
+
+    def _on_update_download_failed(self, detalle: str):
+        self._close_update_progress()
+        QMessageBox.warning(
+            self, "Actualización", f"No se pudo descargar la actualización.\n\n{detalle}"
+        )
+
+    def _close_update_progress(self):
+        dialogo = self._update_progress_dialog
+        if dialogo is not None:
+            dialogo.close()
+            dialogo.deleteLater()
+            self._update_progress_dialog = None
 
     def closeEvent(self, event):
         if self._fullscreen_active:

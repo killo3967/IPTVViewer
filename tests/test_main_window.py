@@ -5,6 +5,7 @@ Fakes a nivel de módulo (estilo ``FakePlayer``) que inyectan en
 llamadas, EPG manager sin datos, logo loader con la señal ``logo_loaded`` y
 un stub-recorder para ``EPGGridDialog``.
 """
+
 import os
 import time
 from datetime import datetime, timedelta
@@ -21,6 +22,7 @@ from src.application.services.view_mode_controller import (
 from src.domain.entities.channel import Channel
 from src.domain.entities.playlist import Playlist
 from src.infrastructure.ui.main_window import TABLE_MIN_WIDTH, IPTVMainWindow
+from src.infrastructure.utils.updater import UpdateInfo, setup_arguments
 
 
 class FakePlaylistLoader:
@@ -145,6 +147,7 @@ def make_config(**overrides) -> dict:
 
 def _recorder():
     """Espía de llamadas sin argumentos con contador."""
+
     class Recorder:
         calls = 0
 
@@ -169,8 +172,13 @@ def _pump_events(seconds: float):
         time.sleep(0.01)
 
 
-def make_window(config: dict | None = None, channels=None, save_callback=None,
-               playback_manager=None, epg_manager=None):
+def make_window(
+    config: dict | None = None,
+    channels=None,
+    save_callback=None,
+    playback_manager=None,
+    epg_manager=None,
+):
     """Construye IPTVMainWindow inyectando fakes."""
     if config is None:
         config = make_config()
@@ -326,9 +334,7 @@ def test_repressing_active_mode_shortcut_is_noop(qtbot):
     qtbot.addWidget(window)
     window.show()
     QApplication.processEvents()
-    window._view_controller.register_listener(
-        lambda old, new: notifications.append((old, new))
-    )
+    window._view_controller.register_listener(lambda old, new: notifications.append((old, new)))
 
     qtbot.keyClick(window, Qt.Key.Key_2, Qt.KeyboardModifier.AltModifier)
     assert window._view_controller.mode is ViewMode.COMPACT
@@ -353,6 +359,7 @@ def test_mode_switch_retargets_video_exactly_once(qtbot):
 
     assert len(playback.initialize_calls) == before + 1
     assert playback.initialize_calls[-1] == int(window.video_widget.winId())
+
 
 def test_f_toggles_fullscreen_on(qtbot, monkeypatch):
     window, _ = make_window()
@@ -465,6 +472,7 @@ def test_close_event_while_fullscreen_restores_windowed_state(qtbot):
     assert window._fullscreen_active is False
     assert window._cursor_timer.isActive() is False
 
+
 def test_zap_down_plays_next_channel(qtbot):
     channels = make_channels()
     window, playback = make_window(channels=channels)
@@ -554,6 +562,7 @@ def test_zap_arrows_fire_with_table_focused(qtbot):
 
     assert playback.play_calls == [channels[1]]
 
+
 def test_splitter_move_flush_persists_state(qtbot):
     saved = []
     window, _ = make_window(save_callback=lambda cfg: saved.append(dict(cfg)))
@@ -606,9 +615,7 @@ def test_restart_in_video_returns_to_normal_restores_splitter(qtbot):
     saved_state = encode_splitter_state(bytes(w1.splitter.saveState()))
     w1.close()
 
-    window, _ = make_window(
-        config=make_config(view_mode="video", splitter_state=saved_state)
-    )
+    window, _ = make_window(config=make_config(view_mode="video", splitter_state=saved_state))
     qtbot.addWidget(window)
     window.show()
     QApplication.processEvents()
@@ -617,6 +624,7 @@ def test_restart_in_video_returns_to_normal_restores_splitter(qtbot):
     qtbot.keyClick(window, Qt.Key.Key_1, Qt.KeyboardModifier.AltModifier)
 
     assert window.splitter.sizes() == reference
+
 
 def _all_menu_actions(menu_bar):
     actions = list(menu_bar.actions())
@@ -643,6 +651,7 @@ def test_ctrl_g_opens_epg_grid_in_compact_and_video(qtbot, monkeypatch):
     import src.infrastructure.ui.main_window as mw
 
     recorded = []
+
     class RecorderDialog:
         def __init__(self, *args, **kwargs):
             recorded.append("created")
@@ -672,6 +681,7 @@ def test_ctrl_g_works_after_returning_to_normal(qtbot, monkeypatch):
     import src.infrastructure.ui.main_window as mw
 
     recorded = []
+
     class RecorderDialog:
         def __init__(self, *args, **kwargs):
             recorded.append("created")
@@ -693,6 +703,7 @@ def test_ctrl_g_works_after_returning_to_normal(qtbot, monkeypatch):
 
     qtbot.keyClick(window, Qt.Key.Key_G, Qt.KeyboardModifier.ControlModifier)
     assert recorded == ["created", "exec"]
+
 
 def test_pip_window_has_detached_flags(qtbot):
     from src.infrastructure.ui.components.pip_window import PIPWindow
@@ -731,9 +742,18 @@ def test_pip_body_drag_moves_window(qtbot):
     QApplication.processEvents()
     start = pip.pos()
 
-    QTest.mousePress(pip, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, pip.rect().center())
-    QTest.mouseMove(pip, pip.rect().center() + __import__("PyQt6.QtCore", fromlist=["QPoint"]).QPoint(30, 20))
-    QTest.mouseRelease(pip, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, pip.rect().center() + __import__("PyQt6.QtCore", fromlist=["QPoint"]).QPoint(30, 20))
+    QTest.mousePress(
+        pip, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, pip.rect().center()
+    )
+    QTest.mouseMove(
+        pip, pip.rect().center() + __import__("PyQt6.QtCore", fromlist=["QPoint"]).QPoint(30, 20)
+    )
+    QTest.mouseRelease(
+        pip,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+        pip.rect().center() + __import__("PyQt6.QtCore", fromlist=["QPoint"]).QPoint(30, 20),
+    )
 
     assert pip.pos() != start
 
@@ -753,9 +773,16 @@ def test_pip_grip_drag_resizes_with_minimum(qtbot):
     assert grip is not None
     before = (pip.width(), pip.height())
 
-    QTest.mousePress(grip, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, grip.rect().center())
+    QTest.mousePress(
+        grip, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, grip.rect().center()
+    )
     QTest.mouseMove(grip, grip.rect().center() + QPoint(40, 30))
-    QTest.mouseRelease(grip, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, grip.rect().center() + QPoint(40, 30))
+    QTest.mouseRelease(
+        grip,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+        grip.rect().center() + QPoint(40, 30),
+    )
 
     assert pip.width() >= 160 and pip.height() >= 90
     assert (pip.width(), pip.height()) != before
@@ -779,6 +806,7 @@ def test_pip_forwards_key_events_to_target(qtbot):
     qtbot.keyClick(pip, Qt.Key.Key_Down)
 
     assert target.received == [Qt.Key.Key_Down]
+
 
 def test_p_opens_pip_and_hides_main_placeholder(qtbot):
     window, _ = make_window()
@@ -839,7 +867,9 @@ def test_pip_never_auto_opens_at_launch(qtbot):
     assert window._pip_window is None
     assert window.splitter.indexOf(window.video_widget) == 1
 
+
 # --- WU 4.3: PIP geometry persistence (AC-13) ---------------------------
+
 
 def test_pip_move_persists_geometry_after_debounce(qtbot):
     # El arrastre del cuerpo (QTest.mouseMove) provoca un crash nativo en
@@ -936,7 +966,9 @@ def test_pip_garbage_geometry_uses_default_placement(qtbot):
     assert pip.width() == 480
     assert pip.height() == 270
 
+
 # --- WU 4.4: re-target on PIP open/close (AC-16 second half) -----------
+
 
 def test_pip_open_close_retargets_video_exactly_twice(qtbot):
     window, playback = make_window()
@@ -953,7 +985,9 @@ def test_pip_open_close_retargets_video_exactly_twice(qtbot):
     assert len(playback.initialize_calls) == before + 2
     assert playback.initialize_calls[-1] == int(window.video_widget.winId())
 
+
 # --- WU 4.5: PIP key forwarding to the main window (REQ-6, REQ-9) ------
+
 
 def test_pip_key_forward_zap_down(qtbot):
     channels = make_channels()
@@ -1058,6 +1092,7 @@ def test_pip_key_forward_ctrl_g_opens_epg_grid(qtbot, monkeypatch):
     import src.infrastructure.ui.main_window as mw
 
     recorded = []
+
     class RecorderDialog:
         def __init__(self, *args, **kwargs):
             recorded.append("created")
@@ -1077,7 +1112,10 @@ def test_pip_key_forward_ctrl_g_opens_epg_grid(qtbot, monkeypatch):
     qtbot.keyClick(window._pip_window, Qt.Key.Key_G, Qt.KeyboardModifier.ControlModifier)
 
     assert recorded == ["created", "exec"]
+
+
 # --- Follow-up fixes: compacto muestra programacion, F=ALT+3+fullscreen, OSD, PIP fit ---
+
 
 def test_f_forces_video_mode_then_restores_previous(qtbot):
     window, _ = make_window()
@@ -1144,6 +1182,7 @@ def test_pip_video_widget_fills_pip_rect(qtbot):
     assert video.width() == 480
     assert video.height() == 270
 
+
 def test_help_menu_has_three_actions(qtbot):
     window, _ = make_window()
     qtbot.addWidget(window)
@@ -1158,6 +1197,7 @@ def test_help_menu_has_three_actions(qtbot):
     assert any("Versión" in t for t in sub)
     assert any("Teclas" in t for t in sub)
     assert any("Licencia" in t for t in sub)
+
 
 def test_help_menu_has_update_and_repo_actions(qtbot):
     window, _ = make_window()
@@ -1188,50 +1228,155 @@ def test_open_repository_opens_url(qtbot, monkeypatch):
     assert recorded == ["https://github.com/killo3967/IPTVViewer"]
 
 
-def test_check_updates_newer_version(qtbot, monkeypatch):
-    import src.infrastructure.ui.main_window as mw
+def _release_payload(tag="v9.9.9", digest="sha256:" + "a" * 64):
+    """JSON mínimo de la API de GitHub con un instalador adjunto."""
+    return {
+        "tag_name": tag,
+        "body": "## Novedades",
+        "html_url": "https://x/releases/tag/9.9.9",
+        "assets": [
+            {
+                "name": "IPTVViewer-Setup-9.9.9.exe",
+                "browser_download_url": "https://x/setup.exe",
+                "digest": digest,
+            }
+        ],
+    }
 
-    recorded = []
-    monkeypatch.setattr(
-        mw.QMessageBox, "information",
-        lambda parent, title, text, *a, **k: recorded.append((title, text)),
+
+def _info(version="9.9.9"):
+    return UpdateInfo(
+        version=version,
+        notes="",
+        asset_name=f"IPTVViewer-Setup-{version}.exe",
+        asset_url="https://x/setup.exe",
+        digest="sha256:" + "a" * 64,
+        page_url="https://x/releases",
     )
+
+
+def test_update_checker_emits_available(qtbot, monkeypatch):
+    import src.infrastructure.ui.main_window as mw
 
     class FakeResponse:
-        status_code = 200
+        def raise_for_status(self):
+            pass
+
         def json(self):
-            return {"tag_name": "v9.9.9"}
+            return _release_payload()
 
     monkeypatch.setattr(mw.requests, "get", lambda *a, **k: FakeResponse())
+    checker = mw._UpdateChecker("1.9.0")
+    recibido = []
+    checker.available.connect(recibido.append)
 
-    window, _ = make_window()
-    qtbot.addWidget(window)
+    checker._run()
 
-    window._check_updates()
-
-    assert recorded and "9.9.9" in recorded[0][1]
+    assert [i.version for i in recibido] == ["9.9.9"]
+    assert recibido[0].can_self_update is True
 
 
-def test_check_updates_handles_no_network(qtbot, monkeypatch):
+def test_update_checker_reports_up_to_date(qtbot, monkeypatch):
     import src.infrastructure.ui.main_window as mw
 
-    recorded = []
-    monkeypatch.setattr(
-        mw.QMessageBox, "warning",
-        lambda parent, title, text, *a, **k: recorded.append(title),
-    )
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return _release_payload(tag="v1.9.0")
+
+    monkeypatch.setattr(mw.requests, "get", lambda *a, **k: FakeResponse())
+    checker = mw._UpdateChecker("1.9.0")
+    al_dia = []
+    checker.up_to_date.connect(al_dia.append)
+
+    checker._run()
+
+    assert al_dia == ["1.9.0"]
+
+
+def test_update_checker_reports_network_failure(qtbot, monkeypatch):
+    import src.infrastructure.ui.main_window as mw
 
     def fake_get(*a, **k):
         raise mw.requests.exceptions.ConnectionError("no net")
 
     monkeypatch.setattr(mw.requests, "get", fake_get)
+    checker = mw._UpdateChecker("1.9.0")
+    fallos = []
+    checker.failed.connect(fallos.append)
 
+    checker._run()
+
+    assert fallos and "no net" in fallos[0]
+
+
+def test_auto_check_is_throttled_to_one_per_day(qtbot):
+    window, _ = make_window(make_config(last_update_check=datetime.now().isoformat()))
+    qtbot.addWidget(window)
+    llamadas = []
+    window._update_checker.check_async = lambda: llamadas.append("check")
+
+    window._auto_check_updates()
+
+    assert llamadas == []
+
+
+def test_auto_check_runs_and_remembers_when_stale(qtbot):
+    guardado = []
+    window, _ = make_window(make_config(last_update_check=""), save_callback=guardado.append)
+    qtbot.addWidget(window)
+    llamadas = []
+    window._update_checker.check_async = lambda: llamadas.append("check")
+
+    window._auto_check_updates()
+
+    assert llamadas == ["check"]
+    assert window._config["last_update_check"]
+    assert guardado and guardado[-1]["last_update_check"]
+
+
+def test_ignored_version_is_not_offered_again(qtbot):
+    window, _ = make_window(make_config(ignored_update_version="9.9.9"))
+    qtbot.addWidget(window)
+    ofertas = []
+    window._offer_update = lambda info: ofertas.append(info)
+
+    window._on_update_available(_info("9.9.9"))
+
+    assert ofertas == []
+
+
+def test_available_version_is_offered(qtbot):
     window, _ = make_window()
     qtbot.addWidget(window)
+    ofertas = []
+    window._offer_update = lambda info: ofertas.append(info)
 
-    window._check_updates()
+    window._on_update_available(_info("9.9.9"))
 
-    assert recorded == ["Actualización"]
+    assert [i.version for i in ofertas] == ["9.9.9"]
+
+
+def test_downloaded_setup_is_launched_silently_and_closes_the_app(qtbot, monkeypatch):
+    import src.infrastructure.ui.main_window as mw
+
+    lanzado = {}
+    monkeypatch.setattr(
+        mw.QProcess,
+        "startDetached",
+        staticmethod(lambda prog, args: lanzado.update(prog=prog, args=args) or True),
+    )
+    window, _ = make_window()
+    qtbot.addWidget(window)
+    cerrado = []
+    monkeypatch.setattr(window, "close", lambda: cerrado.append(True))
+
+    window._on_update_downloaded(r"C:\temp\IPTVViewer-Setup-9.9.9.exe")
+
+    assert lanzado["args"] == setup_arguments()
+    assert cerrado == [True]
 
 
 def test_help_actions_open_dialogs(qtbot, monkeypatch):
@@ -1239,11 +1384,13 @@ def test_help_actions_open_dialogs(qtbot, monkeypatch):
 
     recorded = []
     monkeypatch.setattr(
-        mw.QMessageBox, "about",
+        mw.QMessageBox,
+        "about",
         lambda parent, title, text, *a, **k: recorded.append(("about", title)),
     )
     monkeypatch.setattr(
-        mw.QMessageBox, "information",
+        mw.QMessageBox,
+        "information",
         lambda parent, title, text, *a, **k: recorded.append(("info", title)),
     )
 
@@ -1258,7 +1405,6 @@ def test_help_actions_open_dialogs(qtbot, monkeypatch):
     assert "Acerca de IPTV Viewer" in titles
     assert "Atajos de teclado" in titles
     assert "Licencia" in titles
-
 
 
 def test_ctrl_s_toggles_mute(qtbot):
@@ -1329,8 +1475,8 @@ def test_audio_keys_forwarded_from_pip(qtbot):
     qtbot.addWidget(window)
     from PyQt6.QtCore import QEvent
     from PyQt6.QtGui import QKeyEvent
-    event = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_S,
-                      Qt.KeyboardModifier.ControlModifier)
+
+    event = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_S, Qt.KeyboardModifier.ControlModifier)
     QApplication.sendEvent(window, event)
     assert window._muted is True
     assert playback.mute_calls[-1] is True
@@ -1339,6 +1485,7 @@ def test_audio_keys_forwarded_from_pip(qtbot):
 # ---------------------------------------------------------------------------
 # Columna Programación: sin prefijo NOW, barra de progreso y configuración EPG
 # ---------------------------------------------------------------------------
+
 
 def test_epg_column_has_no_now_prefix(qtbot):
     """La celda guarda ProgramInfo y no escribe "NOW: ..." como texto."""
@@ -1396,8 +1543,7 @@ def test_epg_config_dialog_action_persists_and_applies(qtbot, monkeypatch):
     )
     qtbot.addWidget(window)
 
-    monkeypatch.setattr(mw_module.EPGConfigDialog, "exec",
-                        lambda self: QDialog.DialogCode.Accepted)
+    monkeypatch.setattr(mw_module.EPGConfigDialog, "exec", lambda self: QDialog.DialogCode.Accepted)
     monkeypatch.setattr(mw_module.EPGConfigDialog, "title_only", lambda self: False)
 
     window._open_epg_config_dialog()
@@ -1414,8 +1560,7 @@ def test_epg_config_dialog_cancel_keeps_setting(qtbot, monkeypatch):
 
     window, _ = make_window()
     qtbot.addWidget(window)
-    monkeypatch.setattr(mw_module.EPGConfigDialog, "exec",
-                        lambda self: QDialog.DialogCode.Rejected)
+    monkeypatch.setattr(mw_module.EPGConfigDialog, "exec", lambda self: QDialog.DialogCode.Rejected)
 
     window._open_epg_config_dialog()
 
@@ -1424,9 +1569,7 @@ def test_epg_config_dialog_cancel_keeps_setting(qtbot, monkeypatch):
 
 def test_visible_rows_refresh_does_not_touch_hidden_rows(qtbot):
     """El refresco periódico recalcula solo las filas visibles."""
-    channels = [
-        Channel(name=f"c{i}", url=f"http://test/{i}", group="SPAIN") for i in range(40)
-    ]
+    channels = [Channel(name=f"c{i}", url=f"http://test/{i}", group="SPAIN") for i in range(40)]
     epg = FakeEPGManager(program=FakeProgram())
     window, _ = make_window(channels=channels, epg_manager=epg)
     qtbot.addWidget(window)
@@ -1449,9 +1592,7 @@ def test_epg_refresh_after_scroll_updates_new_visible_rows(qtbot):
     """Tras mover el scroll, el refresco alcanza las filas recién visibles."""
     from src.infrastructure.ui.components.channel_row_delegate import EPG_PROGRAM_ROLE
 
-    channels = [
-        Channel(name=f"c{i}", url=f"http://test/{i}", group="SPAIN") for i in range(40)
-    ]
+    channels = [Channel(name=f"c{i}", url=f"http://test/{i}", group="SPAIN") for i in range(40)]
     epg = FakeEPGManager(program=FakeProgram())
     window, _ = make_window(channels=channels, epg_manager=epg)
     qtbot.addWidget(window)
@@ -1467,6 +1608,7 @@ def test_epg_refresh_after_scroll_updates_new_visible_rows(qtbot):
     assert epg.calls > 0
     for row in window._visible_rows():
         assert window.table.item(row, 0).data(EPG_PROGRAM_ROLE) is not None
+
 
 def test_playback_failed_signal_shows_overlay(qtbot):
     """El aviso de "sin señal" llega a la UI como OSD."""
