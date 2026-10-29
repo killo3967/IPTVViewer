@@ -113,6 +113,27 @@ epg = http://TU_SERVIDOR/xmltv/xteve.xml
 2. Descarga el **instalador** (`IPTVViewer-Setup-*.exe`) o el **ejecutable portátil** (`IPTVViewer.exe`).
 3. Ejecútalo y listo. Sin dependencias: los motores se descargan solos en el primer arranque.
 
+### Si Windows avisa al instalar
+
+El proyecto no tiene certificado de firma comercial, así que al ejecutar un
+instalador recién descargado puede aparecer **«Windows protegió su PC»**
+(Microsoft Defender SmartScreen). Es el comportamiento normal con software sin
+reputación acumulada, no un indicio de que el binario esté manipulado:
+
+- Pulsa **Más información → Ejecutar de todas formas**.
+- Si quieres comprobarlo antes, cada release publica el **SHA-256** de sus
+  ficheros en la API de GitHub. En PowerShell:
+
+  ```powershell
+  (Get-FileHash .\IPTVViewer-Setup-1.10.0.exe -Algorithm SHA256).Hash.ToLower()
+  gh api repos/killo3967/IPTVViewer/releases/latest --jq '.assets[] | .name + " " + .digest'
+  ```
+
+Los dos valores tienen que coincidir. Si actualizas desde la propia aplicación
+(**menú Ayuda → Buscar actualizaciones**), el hash se verifica automáticamente
+antes de instalar nada y el aviso de SmartScreen no aparece, porque la descarga
+no lleva la marca de «fichero de Internet».
+
 ---
 
 ## Documentación técnica
