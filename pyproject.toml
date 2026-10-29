@@ -43,3 +43,8 @@ disable_error_code = ["union-attr", "call-overload"]
 module = ["PyQt6", "PyQt6.*", "vlc", "mpv", "torpy", "torpy.*", "requests", "requests.*"]
 follow_imports = "silent"
 ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+# `pruebas/` son scripts sueltos que crean widgets Qt al importarse: recogerlos
+# aborta pytest con una violacion de acceso en el backend offscreen.
+testpaths = ["tests"]

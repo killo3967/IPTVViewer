@@ -744,12 +744,13 @@ class IPTVViewer(QMainWindow):
         msg.setIcon(QMessageBox.Icon.Critical)
         msg.setText("Error al cargar el archivo")
         msg.setInformativeText(f"Archivo no encontrado en:\n{M3U_FILE}\n\nPor favor, verifica que:")
+        listado = "\n".join(str(f) for f in Path(SCRIPT_DIR).iterdir())
         msg.setDetailedText(f"""
         1. El archivo existe en: {M3U_FILE}
         2. El nombre es exactamente: tv_channel.m3u
         3. Directorio actual: {Path.cwd()}
         4. Archivos en el directorio:
-        {'\n'.join(str(f) for f in Path(SCRIPT_DIR).iterdir())}
+        {listado}
         """)
         msg.exec()
         
