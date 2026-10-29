@@ -1,12 +1,23 @@
 import hashlib
+import logging
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from PyQt6.QtCore import QObject, Qt, QUrl, pyqtSignal
 from PyQt6.QtGui import QPixmap
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
+from src.infrastructure.utils.log_safe import safe_url
+
 MAX_CONCURRENT_LOGOS = 4
+#: Tiempo máximo por descarga (conexión + lectura). Sin él, un host que no
+#: responde (IP apagada, red de contenedor) ocupa un hueco de la cola para
+#: siempre y ningún logo llega a pintarse.
+LOGO_TRANSFER_TIMEOUT_MS = 8000
+#: Avisos por host antes de bajar el resto a DEBUG. Una lista de miles de
+#: canales contra un CDN que responde 429 genera miles de fallos iguales.
+MAX_WARNINGS_PER_HOST = 3
 LOGO_CACHE_TTL_SECONDS = 30 * 24 * 3600  # 30 días
 FAILED_RETRY_SECONDS = 60 * 60  # 1 hora (caché negativa de URLs rotas)
 
@@ -32,6 +43,9 @@ class QtLogoLoaderAdapter(QObject):
         self._queued: set[str] = set()
         # Caché negativa: URLs que fallaron y no se reintentan hasta que expire el TTL.
         self._failed: dict[str, float] = {}
+        # Fallos acumulados por host: se avisa de los primeros y se resume
+        # el resto cuando la cola se vacía.
+        self._failed_by_host: dict[str, int] = {}
 
     def _get_cache_path(self, url: str) -> Path:
         """Genera una ruta única en disco basada en el hash de la URL."""
@@ -96,10 +110,57 @@ class QtLogoLoaderAdapter(QObject):
             request.setAttribute(
                 QNetworkRequest.Attribute.Http2AllowedAttribute, False
             )
+            # Sin este límite un host mudo bloquea la cola entera indefinidamente.
+            request.setTransferTimeout(LOGO_TRANSFER_TIMEOUT_MS)
             reply = self._nam.get(request)
             reply.finished.connect(
                 lambda r=reply, u=url, p=cache_path: self._handle_response(r, u, p)
             )
+
+        if not self._pending and not self._active:
+            self._log_failure_summary()
+
+    @staticmethod
+    def _failure_reason(reply: QNetworkReply) -> str:
+        """Motivo del fallo corto y sin URLs.
+
+        ``errorString()`` repite la URL completa con su query y sus tokens
+        (los CDNs de logos las usan), así que el log acabaría con líneas de
+        cientos de caracteres y datos ajenos al fallo: el nombre del error y
+        el código HTTP bastan para diagnosticar.
+        """
+        error = reply.error()
+        reason = getattr(error, "name", str(error))
+        status = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
+        return f"{reason} (HTTP {status})" if isinstance(status, int) else reason
+
+    def _log_failure(self, url: str, reason: str) -> None:
+        """Registra un fallo de logo sin inundar el log.
+
+        Se avisa de los primeros ``MAX_WARNINGS_PER_HOST`` fallos de cada host;
+        el resto queda en DEBUG y se resume cuando la cola termina.
+        """
+        host = urlsplit(url).netloc or url
+        count = self._failed_by_host.get(host, 0) + 1
+        self._failed_by_host[host] = count
+        level = logging.WARNING if count <= MAX_WARNINGS_PER_HOST else logging.DEBUG
+        logging.log(level, "Logo no descargado (%s): %s", reason, safe_url(url))
+
+    def _log_failure_summary(self) -> None:
+        """Resume los fallos de la tanda y reinicia los contadores.
+
+        Se llama cuando la cola se queda sin trabajo: una sola línea en vez de
+        una por canal.
+        """
+        if not self._failed_by_host:
+            return
+
+        hosts = sorted(self._failed_by_host.items(), key=lambda kv: kv[1], reverse=True)
+        total = sum(count for _, count in hosts)
+        palabra = "host" if len(hosts) == 1 else "hosts"
+        detalle = ", ".join(f"{host} ({count})" for host, count in hosts[:3])
+        logging.info("Logos: %d fallos en %d %s: %s", total, len(hosts), palabra, detalle)
+        self._failed_by_host.clear()
 
     def _handle_response(self, reply: QNetworkReply, url: str, cache_path: Path):
         """Procesa la respuesta, escala el logo, lo guarda y sigue drenando la cola."""
@@ -124,9 +185,12 @@ class QtLogoLoaderAdapter(QObject):
                     self.logo_loaded.emit(url, pixmap)
                 else:
                     # La respuesta llegó pero no es una imagen válida.
+                    self._log_failure(url, "no es una imagen")
                     self._failed[url] = time.time()
             else:
-                # Error de red/HTTP: cachear el fallo para no repetir la descarga.
+                # Error de red/HTTP o tiempo de espera agotado: se cachea el
+                # fallo para no repetir la descarga en cada repintado.
+                self._log_failure(url, self._failure_reason(reply))
                 self._failed[url] = time.time()
         finally:
             reply.deleteLater()
